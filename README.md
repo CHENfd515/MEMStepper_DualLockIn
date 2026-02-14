@@ -1,9 +1,10 @@
 # MEMStepper_DualLockIn
 MATLAB App for MEMS Stepper Control with Dual Lock‑in Amplifier Readout
 
+📫 alexw25.us@berkeley.edu | alexw25.us@utexas.edu
 > By Alex @ Feb.2026
 
-> UC Berkeley-MIT Cao & Tang Lab
+> UC Berkeley-MIT Cao & Tang Lab, All Copyright Reserved.
 ## Overview
 `MEMStepper_DualLockIn` is a MATLAB App Designer application for **precision control and characterization of MEMS stepper actuators**.
 It integrates:

@@ -195,7 +195,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         prev_closed = false % Safety flag to verify previous VISA session closure
         positioningSTOP = true  % Global interrupt flag to stop feedback and movement
         plotCapFBloss = false   % Global plot flag for detecting feedback process
-        default_wait_time = 0.5 % Ensures the Lock-in amplifier's integration (Time Constant) has settled.
+        default_wait_time = 0.1 % Ensures the Lock-in amplifier's integration (Time Constant) has settled.
         
         % --- Fitting & Coordinate Data ---
         k_fit           % Slope of the linear fit: d(Cap)/d(Step)
@@ -948,7 +948,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
                 end
                 app.StepsPhyEditField.Value = curr_step;
                 if app.StepsCapZero > -100
-                    app.StepsCapEditField.Value = app.StepsCapZero + curr_step;
+                    app.StepsCapEditField.Value = curr_step - app.StepsCapZero;
                 end
             end
         end
@@ -1009,20 +1009,33 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             demanded_x = target_pos;
             y_theoretical = app.k_fit * demanded_x + app.b_fit;
             
-            wait_time = 2.5;
+            wait_time = 1.0;
             fprintf("[LOG] goTo_fb (scan version):\twait_time=%.4f s\n", wait_time);
             
             % --- 2. Define Parameter Sweep Combinations ---
-            Kp_list = [0.005, 0.11, 0.2, 0.3];
-            Ki_list = [0.002, 0.005, 0.01];
-            Kd_list = [0.005, 0.014, 0.02, 0.05];
-            pts_per_config = 210; 
+            Kp_list = [0.005, 0.3, 0.45];
+            Ki_list = [0.001, 0.002, 0.01];
+            Kd_list = [0.01, 0.02, 0.1];
+            pts_per_config = 300; 
             
             % Generate combination matrix (N x 3)
             [KP, KI, KD] = meshgrid(Kp_list, Ki_list, Kd_list);
             configs = [KP(:), KI(:), KD(:)]; 
             zero_config = [0, 0, 0];
             configs = [configs; zero_config];
+            
+            % % Define combination matrix
+            % specific_configs = [
+            %     0.3,   0.002, 0.02;    % best (G3)
+            %     0.3,   0.005, 0.02;    % +I
+            %     0.3,   0.01,  0.02;    % ++I
+            %     0.3,   0.002, 0.05;    % +D
+            %     0.3,   0.002, 0.09;    % ++D
+            %     0.005, 0.01,  0.01;     % vibrate
+            % ];
+            % 
+            % configs = [specific_configs; zero_config];
+
             num_configs = size(configs, 1);
             
             % --- 3. Memory & Log Initialization ---
@@ -1034,7 +1047,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             if fid == -1, error('[LOG] Could not create log file.'); end
             
             % Force initial position for the very first group
-            force_org_step = 7;
+            force_org_step = 5;
             fprintf("[LOG] Forcing initial x=%d before starting sweeps.\n", force_org_step);
             app.setVoltages(volt, force_org_step * 120);
             app.CurrentStepEditField.Value = force_org_step;
@@ -1083,8 +1096,8 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
                     % --- C. PID Control / Force Step Logic ---    
                     pt_count = pt_count + 1; % Total counter
                     fprintf("[DEBUG] pt_count=%d, pid_pause_counter=%d [mod(pt_count, 100)=%d]\n", pt_count, pid_pause_counter, mod(pt_count, 100));
-                    % Every 200 points, force step and pause PID
-                    if (mod(pt_count, 200) == 1) && (Kp ~=0)
+                    % Every pts_per_config points, force step and pause PID
+                    if (mod(pt_count, pts_per_config) == 1) && (Kp ~=0)
                         % fprintf("[DEBUG] pid_pause_counter=%d\n", pid_pause_counter);
                         new_x = force_org_step;
                         status_str = 'FORCE STEP';
@@ -1790,7 +1803,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
 
             % 4. Move to Final Position
             app.StepsCapZero = inflectionStep;
-            app.StepsCapEditField.Value = inflectionStep;
+            app.StepsCapEditField.Value = 0;
 
             % Move device to the identified inflection point
             app.goTo(volt, inflectionStep, microstep, speed);
@@ -1837,7 +1850,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         %         inflectionStep, inflectionValue);
         % 
         %     app.StepsCapZero = inflectionStep;
-        %     app.StepsCapEditField.Value = inflectionStep;
+        %     app.StepsCapEditField.Value = 0;
         % 
         %     app.goTo(app.zeroVolt, inflectionStep, ...
         %         app.zeroMicrostep, app.zeroSpeed);
@@ -2687,11 +2700,11 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         function InitResetButton_2Pushed(app, event)
             % 1. Reset UI Fields
             app.CurrentStepEditField.Value = 0;
-            app.ScanStepSrt.Value = 2;
-            app.ScanStepEnd.Value = 8;
+            app.ScanStepSrt.Value = 0;
+            app.ScanStepEnd.Value = 7;
             app.FinalStepEditField.Value = 0;
             app.FilterWinEditField.Value = 1;
-            app.StepMinLossEditField.Value = 0.05;
+            % app.StepMinLossEditField.Value = 0.05; % close "I" when StepLoss < 5%
             app.SpeedstepsEditField_2.Value = 0.2;
             
             % 2. Reset Data Properties
@@ -2739,7 +2752,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
                 microstep2 = str2double(app.FinalMicrostepDropDown.Value);
             end
             if isempty(app.StepMinLossEditField.Value)
-                app.StepMinLossEditField.Value = 0.01; % Default step_tolerance
+                app.StepMinLossEditField.Value = 0.0001; % Default step_tolerance
             end
             
             % Disable button after GO button pushed
@@ -2774,6 +2787,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             % Extract drive settings from the User Interface
             microstep1 = str2double(app.ScanMicrostepDropDown.Value);
             speed = app.SpeedstepsEditField_2.Value;
+            speed_move = 1; % faster
             drive_volt = app.DriveVoltageEditField_3.Value;
             
             % Define the trajectory coordinates for the motion sequence
@@ -2786,7 +2800,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
 
             % (Step A) Fast move from origin to the start of the scan range
             if origin_pos ~= scan_pos_srt
-                app.goTo_fit(drive_volt, origin_pos, scan_pos_srt, microstep1, speed, false);
+                app.goTo_fit(drive_volt, origin_pos, scan_pos_srt, microstep1, speed_move, false);
             end
 
             % (Step B Precision scan across the designated range
@@ -2838,7 +2852,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             % Move from the end of the scan range to the user-defined final position
             if app.CurrentStepEditField.Value ~= final_pos
                 % Model is already built; move to target without further updating k/b
-                app.goTo_fit(drive_volt, app.CurrentStepEditField.Value, final_pos, microstep1, speed, false);
+                app.goTo_fit(drive_volt, app.CurrentStepEditField.Value, final_pos, microstep1, speed_move, false);
             end
             
             % Enable subsequent feedback controls
@@ -3626,7 +3640,6 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.ScanStepSrt = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.ScanStepSrt.HorizontalAlignment = 'center';
             app.ScanStepSrt.Position = [125 83 26 23];
-            app.ScanStepSrt.Value = 2;
 
             % Create ScanStepEditFieldLabel
             app.ScanStepEditFieldLabel = uilabel(app.PositioningFeedbackTab);
@@ -3692,7 +3705,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.StepMinLossEditField = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.StepMinLossEditField.HorizontalAlignment = 'center';
             app.StepMinLossEditField.Position = [282 45 69 25];
-            app.StepMinLossEditField.Value = 0.05;
+            app.StepMinLossEditField.Value = 0.0001;
 
             % Create FinalMicrostepLabel
             app.FinalMicrostepLabel = uilabel(app.PositioningFeedbackTab);
@@ -3743,7 +3756,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.ScanStepEnd = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.ScanStepEnd.HorizontalAlignment = 'center';
             app.ScanStepEnd.Position = [165 83 26 23];
-            app.ScanStepEnd.Value = 8;
+            app.ScanStepEnd.Value = 7;
 
             % Create ScanStepEditFieldLabel_2
             app.ScanStepEditFieldLabel_2 = uilabel(app.PositioningFeedbackTab);
@@ -3770,7 +3783,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.KpEditField = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.KpEditField.HorizontalAlignment = 'center';
             app.KpEditField.Position = [383 83 44 23];
-            app.KpEditField.Value = 0.1;
+            app.KpEditField.Value = 0.2;
 
             % Create KiEditFieldLabel
             app.KiEditFieldLabel = uilabel(app.PositioningFeedbackTab);
@@ -3782,7 +3795,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.KiEditField = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.KiEditField.HorizontalAlignment = 'center';
             app.KiEditField.Position = [383 46 44 23];
-            app.KiEditField.Value = 0.005;
+            app.KiEditField.Value = 0.002;
 
             % Create KdEditFieldLabel
             app.KdEditFieldLabel = uilabel(app.PositioningFeedbackTab);
@@ -3794,7 +3807,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.KdEditField = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.KdEditField.HorizontalAlignment = 'center';
             app.KdEditField.Position = [383 9 44 23];
-            app.KdEditField.Value = 0.013;
+            app.KdEditField.Value = 0.005;
 
             % Create LogPlotSwitchLabel
             app.LogPlotSwitchLabel = uilabel(app.PositioningFeedbackTab);

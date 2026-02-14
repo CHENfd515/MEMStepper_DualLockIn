@@ -1,0 +1,373 @@
+>> note = "20MHZ, 300mVpp, 100mVdc, time_const 30ms, sen 300uV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 300mVpp, 100mVdc, time_const 30ms, sen 300uV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 13 points) : k1 = 8.357e-06,	b1 = 2.729e-04
+[LOG] SCAN_PART_2 (Backward 13 points): k2 = 8.364e-06,	b2 = 2.729e-04
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 8.361e-06,	b_total = 2.729e-04
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 2.232e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0267 steps
+	(2.000000, 2.833930e-04)
+	(2.500000, 2.884490e-04)
+	(3.000000, 2.960520e-04)
+	(3.500000, 3.021850e-04)
+	(4.000000, 3.086310e-04)
+	(4.500000, 3.149850e-04)
+	(5.000000, 3.212900e-04)
+	(5.500000, 3.263150e-04)
+	(6.000000, 3.299910e-04)
+	(6.500000, 3.299910e-04)
+	(7.000000, 3.299910e-04)
+	(7.500000, 3.299910e-04)
+	(8.000000, 3.299910e-04)
+	(8.000000, 3.299910e-04)
+	(7.500000, 3.299910e-04)
+	(7.000000, 3.299910e-04)
+	(6.500000, 3.299910e-04)
+	(6.000000, 3.299910e-04)
+	(5.500000, 3.259120e-04)
+	(5.000000, 3.218240e-04)
+	(4.500000, 3.154190e-04)
+	(4.000000, 3.087920e-04)
+	(3.500000, 3.028300e-04)
+	(3.000000, 2.958810e-04)
+	(2.500000, 2.881060e-04)
+	(2.000000, 2.831820e-04)
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+>> note = "20MHZ, 300mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 300mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 13 points) : k1 = 1.273e-05,	b1 = 2.573e-04
+[LOG] SCAN_PART_2 (Backward 13 points): k2 = 1.273e-05,	b2 = 2.571e-04
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 1.273e-05,	b_total = 2.572e-04
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 3.871e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0304 steps
+	(2.000000, 2.838010e-04)
+	(2.500000, 2.883330e-04)
+	(3.000000, 2.958860e-04)
+	(3.500000, 3.021300e-04)
+	(4.000000, 3.079720e-04)
+	(4.500000, 3.145170e-04)
+	(5.000000, 3.207610e-04)
+	(5.500000, 3.255960e-04)
+	(6.000000, 3.336520e-04)
+	(6.500000, 3.398960e-04)
+	(7.000000, 3.467450e-04)
+	(7.500000, 3.528880e-04)
+	(8.000000, 3.598370e-04)
+	(8.000000, 3.591320e-04)
+	(7.500000, 3.525860e-04)
+	(7.000000, 3.468450e-04)
+	(6.500000, 3.393930e-04)
+	(6.000000, 3.336520e-04)
+	(5.500000, 3.260990e-04)
+	(5.000000, 3.211640e-04)
+	(4.500000, 3.141150e-04)
+	(4.000000, 3.085760e-04)
+	(3.500000, 3.021300e-04)
+	(3.000000, 2.952820e-04)
+	(2.500000, 2.881320e-04)
+	(2.000000, 2.830960e-04)
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+>> note = "20MHZ, 400mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 400mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 13 points) : k1 = 1.711e-05,	b1 = 3.430e-04
+[LOG] SCAN_PART_2 (Backward 13 points): k2 = 1.715e-05,	b2 = 3.434e-04
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 1.713e-05,	b_total = 3.432e-04
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 9.140e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0533 steps
+	(2.000000, 3.783680e-04)
+	(2.500000, 3.846120e-04)
+	(3.000000, 3.949850e-04)
+	(3.500000, 4.029410e-04)
+	(4.000000, 4.114010e-04)
+	(4.500000, 4.192560e-04)
+	(5.000000, 4.288240e-04)
+	(5.500000, 4.367800e-04)
+	(6.000000, 4.454410e-04)
+	(6.500000, 4.545050e-04)
+	(7.000000, 4.631660e-04)
+	(7.500000, 4.708200e-04)
+	(8.000000, 4.805890e-04)
+	(8.000000, 4.808910e-04)
+	(7.500000, 4.712230e-04)
+	(7.000000, 4.642740e-04)
+	(6.500000, 4.550080e-04)
+	(6.000000, 4.466490e-04)
+	(5.500000, 4.352690e-04)
+	(5.000000, 4.304350e-04)
+	(4.500000, 4.208670e-04)
+	(4.000000, 4.127100e-04)
+	(3.500000, 4.039480e-04)
+	(3.000000, 3.943810e-04)
+	(2.500000, 3.852160e-04)
+	(2.000000, 3.782670e-04)
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+>> note = "20MHZ, 500mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 500mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 13 points) : k1 = 2.127e-05,	b1 = 4.266e-04
+[LOG] SCAN_PART_2 (Backward 13 points): k2 = 2.140e-05,	b2 = 4.259e-04
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 2.133e-05,	b_total = 4.262e-04
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 3.718e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0174 steps
+	(2.000000, 4.693090e-04)
+	(2.500000, 4.780710e-04)
+	(3.000000, 4.905590e-04)
+	(3.500000, 5.028460e-04)
+	(4.000000, 5.129170e-04)
+	(4.500000, 5.219810e-04)
+	(5.000000, 5.336630e-04)
+	(5.500000, 5.404110e-04)
+	(6.000000, 5.545100e-04)
+	(6.500000, 5.643800e-04)
+	(7.000000, 5.762630e-04)
+	(7.500000, 5.859310e-04)
+	(8.000000, 5.972110e-04)
+	(8.000000, 5.977140e-04)
+	(7.500000, 5.859310e-04)
+	(7.000000, 5.765660e-04)
+	(6.500000, 5.645810e-04)
+	(6.000000, 5.544090e-04)
+	(5.500000, 5.412160e-04)
+	(5.000000, 5.332600e-04)
+	(4.500000, 5.223830e-04)
+	(4.000000, 5.124130e-04)
+	(3.500000, 5.018390e-04)
+	(3.000000, 4.906600e-04)
+	(2.500000, 4.777690e-04)
+	(2.000000, 4.691080e-04)
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+>> note = "20MHZ, 600mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 600mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 13 points) : k1 = 2.564e-05,	b1 = 5.322e-04
+[LOG] SCAN_PART_2 (Backward 13 points): k2 = 2.580e-05,	b2 = 5.308e-04
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 2.572e-05,	b_total = 5.315e-04
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 7.748e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0301 steps
+	(2.000000, 5.835150e-04)
+	(2.500000, 5.942900e-04)
+	(3.000000, 6.105050e-04)
+	(3.500000, 6.216830e-04)
+	(4.000000, 6.365890e-04)
+	(4.500000, 6.472640e-04)
+	(5.000000, 6.612630e-04)
+	(5.500000, 6.704270e-04)
+	(6.000000, 6.868430e-04)
+	(6.500000, 6.984250e-04)
+	(7.000000, 7.128260e-04)
+	(7.500000, 7.230990e-04)
+	(8.000000, 7.378030e-04)
+	(8.000000, 7.381050e-04)
+	(7.500000, 7.235020e-04)
+	(7.000000, 7.121210e-04)
+	(6.500000, 6.982230e-04)
+	(6.000000, 6.859370e-04)
+	(5.500000, 6.695210e-04)
+	(5.000000, 6.606580e-04)
+	(4.500000, 6.457530e-04)
+	(4.000000, 6.360850e-04)
+	(3.500000, 6.222880e-04)
+	(3.000000, 6.087930e-04)
+	(2.500000, 5.933840e-04)
+	(2.000000, 5.827090e-04)
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+>> note = "20MHZ, 500mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 500mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 11 points) : k1 = 2.115e-05,	b1 = 4.269e-04
+[LOG] SCAN_PART_2 (Backward 11 points): k2 = 2.124e-05,	b2 = 4.265e-04
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 2.119e-05,	b_total = 4.267e-04
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 5.035e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0238 steps
+	(0.000000, 4.267090e-04)
+	(0.500000, 4.387940e-04)
+	(1.000000, 4.474550e-04)
+	(1.500000, 4.586340e-04)
+	(2.000000, 4.698130e-04)
+	(2.500000, 4.776680e-04)
+	(3.000000, 4.908610e-04)
+	(3.500000, 5.013350e-04)
+	(4.000000, 5.118090e-04)
+	(4.500000, 5.218800e-04)
+	(5.000000, 5.329580e-04)
+	(5.000000, 5.334620e-04)
+	(4.500000, 5.221820e-04)
+	(4.000000, 5.118090e-04)
+	(3.500000, 5.011340e-04)
+	(3.000000, 4.891490e-04)
+	(2.500000, 4.770640e-04)
+	(2.000000, 4.694100e-04)
+	(1.500000, 4.584320e-04)
+	(1.000000, 4.480590e-04)
+	(0.500000, 4.379880e-04)
+	(0.000000, 4.265080e-04)
+>> note = "20MHZ, 200mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 200mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 13 points) : k1 = 8.679e-06,	b1 = 1.742e-04
+[LOG] SCAN_PART_2 (Backward 13 points): k2 = 8.641e-06,	b2 = 1.744e-04
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 8.660e-06,	b_total = 1.743e-04
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 2.791e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0322 steps
+	(2.000000, 1.917520e-04)
+	(2.500000, 1.948740e-04)
+	(3.000000, 2.010170e-04)
+	(3.500000, 2.049450e-04)
+	(4.000000, 2.092760e-04)
+	(4.500000, 2.134050e-04)
+	(5.000000, 2.179360e-04)
+	(5.500000, 2.206560e-04)
+	(6.000000, 2.260940e-04)
+	(6.500000, 2.305250e-04)
+	(7.000000, 2.353600e-04)
+	(7.500000, 2.389850e-04)
+	(8.000000, 2.441210e-04)
+	(8.000000, 2.438190e-04)
+	(7.500000, 2.388840e-04)
+	(7.000000, 2.350570e-04)
+	(6.500000, 2.304250e-04)
+	(6.000000, 2.264970e-04)
+	(5.500000, 2.210590e-04)
+	(5.000000, 2.180370e-04)
+	(4.500000, 2.132030e-04)
+	(4.000000, 2.091750e-04)
+	(3.500000, 2.048440e-04)
+	(3.000000, 2.003120e-04)
+	(2.500000, 1.953780e-04)
+	(2.000000, 1.920540e-04)
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+>> note = "20MHZ, 100mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 100mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 13 points) : k1 = 4.318e-06,	b1 = 9.938e-05
+[LOG] SCAN_PART_2 (Backward 13 points): k2 = 4.347e-06,	b2 = 9.926e-05
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 4.333e-06,	b_total = 9.932e-05
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 1.859e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0429 steps
+	(2.000000, 1.083640e-04)
+	(2.500000, 1.097740e-04)
+	(3.000000, 1.122910e-04)
+	(3.500000, 1.147090e-04)
+	(4.000000, 1.168240e-04)
+	(4.500000, 1.187370e-04)
+	(5.000000, 1.212550e-04)
+	(5.500000, 1.225640e-04)
+	(6.000000, 1.252830e-04)
+	(6.500000, 1.271970e-04)
+	(7.000000, 1.298150e-04)
+	(7.500000, 1.315270e-04)
+	(8.000000, 1.343470e-04)
+	(8.000000, 1.341460e-04)
+	(7.500000, 1.318290e-04)
+	(7.000000, 1.297150e-04)
+	(6.500000, 1.273980e-04)
+	(6.000000, 1.253840e-04)
+	(5.500000, 1.227660e-04)
+	(5.000000, 1.212550e-04)
+	(4.500000, 1.190390e-04)
+	(4.000000, 1.164210e-04)
+	(3.500000, 1.146080e-04)
+	(3.000000, 1.123920e-04)
+	(2.500000, 1.098750e-04)
+	(2.000000, 1.080620e-04)
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+>> note = "20MHZ, 200mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+note = 
+
+    "20MHZ, 200mVpp, 100mVdc, time_const 30ms, sen 3mV rms, VDD 3.0, 2/13/2026"
+
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] goTo_fit (scan version):	wait_time=5.0000 s
+[LOG] SCAN_PART Channel               : R
+[LOG] SCAN_PART_1 (Forward 13 points) : k1 = 8.653e-06,	b1 = 1.756e-04
+[LOG] SCAN_PART_2 (Backward 13 points): k2 = 8.600e-06,	b2 = 1.760e-04
+[LOG] SCAN_TOTAL  (Symmetric)         : k_total = 8.627e-06,	b_total = 1.758e-04
+[LOG] HYSTERESIS_AVG: Mean Delta_Cap  (dy) = 2.556e-07
+[LOG] HYSTERESIS_AVG: Mean Delta_Step (dx) = 0.0296 steps
+	(2.000000, 1.932620e-04)
+	(2.500000, 1.967880e-04)
+	(3.000000, 2.016220e-04)
+	(3.500000, 2.059520e-04)
+	(4.000000, 2.104840e-04)
+	(4.500000, 2.146130e-04)
+	(5.000000, 2.191450e-04)
+	(5.500000, 2.217640e-04)
+	(6.000000, 2.275040e-04)
+	(6.500000, 2.320360e-04)
+	(7.000000, 2.366690e-04)
+	(7.500000, 2.399920e-04)
+	(8.000000, 2.452290e-04)
+	(8.000000, 2.451280e-04)
+	(7.500000, 2.403950e-04)
+	(7.000000, 2.366690e-04)
+	(6.500000, 2.317340e-04)
+	(6.000000, 2.279070e-04)
+	(5.500000, 2.220650e-04)
+	(5.000000, 2.195480e-04)
+	(4.500000, 2.146130e-04)
+	(4.000000, 2.105850e-04)
+	(3.500000, 2.063550e-04)
+	(3.000000, 2.017220e-04)
+	(2.500000, 1.969890e-04)
+	(2.000000, 1.938670e-04)
+[LOG] goTo_fit (scan version):	wait_time=1.0000 s
+>> 

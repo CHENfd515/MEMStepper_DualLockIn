@@ -60,10 +60,10 @@ def analyze_mems_log(file_path):
     # Synchronization Protocol: Generate analy_report.txt that meets load_report() regex requirements
     # ==========================================================
     report_lines = []
-    # Header is for human reading only
     header = (f"{'Group':<8} | {'Kp':>9} | {'Ki':>9} | {'Kd':>9} | "
-              f"{'Mean':>10} | {'Std':>10} | {'P2P':>10} | {'MAE':>10} | "
-              f"{'P%':>6} | {'I%':>6} | {'D%':>6} | {'Dominant':>8}")
+              f"{'Mean':>10} | {'Std':>10} | {'MAE':>10} | "
+              f"{'MAE_l100':>10} | {'MSE_l100':>10} | " 
+              f"{'P%':>6} | {'I%':>6} | {'D%':>6} | {'Dom':>4}") 
     report_lines.append(header)
     report_lines.append("-" * len(header))
 
@@ -78,6 +78,11 @@ def analyze_mems_log(file_path):
         v_p2p = subset['Step_Loss'].max() - subset['Step_Loss'].min()
         v_mae = subset['Abs_Step_Loss'].mean()
         
+        # Last 100 steps analysis (or all if less than 100)
+        last_subset = subset.tail(100)
+        v_mae_last = last_subset['Abs_Step_Loss'].mean()
+        v_mse_last = (last_subset['Step_Loss']**2).mean()
+        
         # Contribution ratio calculation
         p_c, i_c, d_c = np.abs(subset[['P_Out', 'I_Out', 'D_Out']]).mean()
         total_c = p_c + i_c + d_c
@@ -88,8 +93,9 @@ def analyze_mems_log(file_path):
 
         # Strictly construct row according to load_report pattern
         row = (f"G{gid:<7} | {kp:9.2e} | {ki:9.2e} | {kd:9.2e} | "
-               f"{v_mean:10.2e} | {v_std:10.2e} | {v_p2p:10.2e} | {v_mae:10.2e} | "
-               f"{p_r*100:6.1f} | {i_r*100:6.1f} | {d_r*100:6.1f} | {dom:>8}")
+               f"{v_mean:10.2e} | {v_std:10.2e} | {v_mae:10.2e} | " 
+               f"{v_mae_last:10.2e} | {v_mse_last:10.2e} | "
+               f"{p_r*100:6.1f} | {i_r*100:6.1f} | {d_r*100:6.1f} | {dom:>4}")
         report_lines.append(row)
 
     with open('analy_report.txt', 'w', encoding='utf-8') as f_rep:
@@ -301,7 +307,7 @@ def curve_mems_log(file_path, fine_plot=False):
 
     timestamp = time.strftime("%m%d")
     mode = "fine" if fine_plot else "auto"
-    filename = f"mems_step_loss_curves_{mode}_{timestamp}.pdf"
+    filename = f"mems_step_loss_curves_{mode}_{timestamp}"
 
     plt.suptitle(
         f"Step Loss Trend by PID Group ({'Fine' if fine_plot else 'Auto'} Mode)",
@@ -309,7 +315,8 @@ def curve_mems_log(file_path, fine_plot=False):
     )
 
     plt.tight_layout(rect=[0, 0, 0.97, 0.95])
-    plt.savefig(filename, format='pdf')
+    plt.savefig(filename+".pdf", format='pdf')
+    plt.savefig(filename+".png", format='png', dpi=300)
     plt.close()
 
     print(f"Saved: {filename}")
