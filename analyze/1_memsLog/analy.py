@@ -5,6 +5,9 @@ import numpy as np
 from matplotlib.patches import Patch
 import time
 
+cutPoint = 100  # Last 100 steps for focused analysis
+
+
 def parse_pid_config(conf_str):
     parts = conf_str.replace(' ', '').split(',')
     kp = float(parts[0].split('=')[1])
@@ -32,7 +35,7 @@ def analyze_mems_log(file_path):
                     step_loss = float(match.group(1))
                     kp, ki, kd = map(float, match.group(2, 3, 4))
                     p_out, i_out, d_out = map(float, match.group(5, 6, 7))
-                    config_str = f"Kp={kp:.1e}, Ki={ki:.1e}, Kd={kd:.1e}"
+                    config_str = f"Kp={kp:.2e}, Ki={ki:.2e}, Kd={kd:.2e}"
 
                     if config_str != last_config:
                         group_id += 1
@@ -78,8 +81,8 @@ def analyze_mems_log(file_path):
         v_p2p = subset['Step_Loss'].max() - subset['Step_Loss'].min()
         v_mae = subset['Abs_Step_Loss'].mean()
         
-        # Last 100 steps analysis (or all if less than 100)
-        last_subset = subset.tail(100)
+        # Last cutPoint steps analysis (or all if less than cutPoint)
+        last_subset = subset.tail(cutPoint)
         v_mae_last = last_subset['Abs_Step_Loss'].mean()
         v_mse_last = (last_subset['Step_Loss']**2).mean()
         
@@ -186,7 +189,7 @@ def curve_mems_log(file_path, fine_plot=False):
         True  -> Fixed y-axis range [-0.12, 0.12]
         False -> Auto reasonable scaling
     """
-
+    
     pattern = (
         r"Step Loss \(.*?\): \[\s*([\d\.-]+)\]"
         r".*?Gains\(P,I,D\): \[\s*([\d\.e\+-]+),\s*([\d\.e\+-]+),\s*([\d\.e\+-]+)\]"
@@ -253,8 +256,8 @@ def curve_mems_log(file_path, fine_plot=False):
         y_max = np.max(y)
         y_min = np.min(y)
         mae = np.mean(np.abs(y))
-        if len(y) >= 100:
-            mse_100 = np.mean(y[-100:]**2)
+        if len(y) >= cutPoint:
+            mse_100 = np.mean(y[-cutPoint:]**2)
         else:
             mse_100 = np.mean(y**2)
 
@@ -292,7 +295,7 @@ def curve_mems_log(file_path, fine_plot=False):
         ax.set_title(
             f"G{gid} | {pid_label}\n"
             f"max={y_max:.2e}  min={y_min:.2e}  "
-            f"MAE={mae:.2e}  MSE(Last100)={mse_100:.2e}",
+            f"MAE={mae:.2e}  MSE(Last{cutPoint:d})={mse_100:.2e}",
             fontsize=9
         )
 
