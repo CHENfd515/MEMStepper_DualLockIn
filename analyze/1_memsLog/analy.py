@@ -491,7 +491,7 @@ def curve_mems_log_byStep(file_path, debug=True, color_type="discrete"):
     plt.savefig(f'mems_step_loss_curves_byStep_{time.strftime("%m%d")}.png', dpi=300)
 
 if __name__ == "__main__":
-    analyze_mems_log('mems.log')
+    # analyze_mems_log('mems.log')
     # curve_mems_log_byGroup('mems.log', fine_plot=False)
     # curve_mems_log_byGroup('mems.log', fine_plot=True)
-    # curve_mems_log_byStep('mems.log', debug=False)
+    curve_mems_log_byStep('mems.log', debug=False)
