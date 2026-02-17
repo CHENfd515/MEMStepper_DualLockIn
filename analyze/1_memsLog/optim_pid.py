@@ -12,10 +12,32 @@ import matplotlib.pyplot as plt
 def load_report(file_path):
     rows = []
 
+    with open(file_path, 'r', encoding='utf-8') as f:
+        header_line = ""
+        for line in f:
+            if "Mean_l" in line:
+                header_line = line.strip()
+                break
+
+        last_mean_col = None
+        last_mae_col = None
+        last_mse_col = None
+
+        if header_line:
+            cols = [c.strip() for c in header_line.split("|")]
+            for c in cols:
+                if c.startswith("Mean_l"):
+                    last_mean_col = c
+                if c.startswith("MAE_l"):
+                    last_mae_col = c
+                if c.startswith("MSE_l"):
+                    last_mse_col = c
+
     pattern = re.compile(
         r"G(\d+)\s+\|\s+"
         r"([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+"
-        r"([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+"
+        r"([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+"
+        r"([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+([\deE\+\-\.]+)\s+\|\s+"
         r"([\d\.]+)\s+\|\s+([\d\.]+)\s+\|\s+([\d\.]+)\s+\|\s+([PID])"
     )
 
@@ -30,74 +52,116 @@ def load_report(file_path):
                     'Kd': float(m.group(4)),
                     'Mean': float(m.group(5)),
                     'Std': float(m.group(6)),
-                    'P2P': float(m.group(7)),
-                    'MAE': float(m.group(8)),
-                    'P_pct': float(m.group(9)),
-                    'I_pct': float(m.group(10)),
-                    'D_pct': float(m.group(11)),
-                    'Dominant': m.group(12)
+                    'MAE': float(m.group(7)),
+                    last_mean_col: float(m.group(8)) if last_mean_col else None,
+                    last_mae_col: float(m.group(9)) if last_mae_col else None,
+                    last_mse_col: float(m.group(10)) if last_mse_col else None,
+                    'P_pct': float(m.group(11)),
+                    'I_pct': float(m.group(12)),
+                    'D_pct': float(m.group(13)),
+                    'Dominant': m.group(14)
                 })
 
     return pd.DataFrame(rows)
 
 
+
 # =========================
 # Pareto Front Visualization
 # =========================
-def plot_pareto(df, pareto_df):
+def plot_pareto(df, pareto_df, opt_last=False):
+
     current_time = datetime.now().strftime("%m%d")
     save_path = f"pareto_front_{current_time}.png"
-    """
-    df         : all candidate PID sets
-    pareto_df  : Pareto-optimal subset
-    """
 
-    plt.figure(figsize=(9, 7))
+    last_mean_col = [c for c in df.columns if c.startswith("Mean_l")]
+    last_mae_col  = [c for c in df.columns if c.startswith("MAE_l")]
+    last_mse_col  = [c for c in df.columns if c.startswith("MSE_l")]
 
-    # candidates
-    plt.scatter(
-        df['Std'],
-        df['MAE'],
-        c='lightgray',
-        s=40,
-        label='Candidates'
-    )
+    if opt_last and last_mean_col:
+        x_col = last_mean_col[0]
+        y_col = last_mae_col[0]
+        c_col = last_mse_col[0]
+        title = "Pareto Front (Last Window Optimization)"
+    else:
+        x_col = "Std"
+        y_col = "MAE"
+        c_col = "P2P"
+        title = "Pareto Front (Global Optimization)"
 
-    # pareto optimal
-    sc = plt.scatter(
-        pareto_df['Std'],
-        pareto_df['MAE'],
-        c=pareto_df['P2P'],
+    plt.figure(figsize=(10, 8))
+
+    # =========================
+    sc_all = plt.scatter(
+        df[x_col],
+        df[y_col],
+        c=df[c_col],
         cmap='viridis',
-        s=120,
-        edgecolors='black',
-        label='Pareto Optimal'
+        s=70,
+        edgecolors='black'
     )
 
-    for _, row in pareto_df.iterrows():
+    for _, row in df.iterrows():
+        label = f"G{row['Group']}\nP={row['Kp']:.1e}\nI={row['Ki']:.1e}\nD={row['Kd']:.1e}"
         plt.text(
-            row['Std'],
-            row['MAE'],
-            row['Group'],
+            row[x_col],
+            row[y_col],
+            label,
             fontsize=9,
             ha='left',
             va='bottom'
         )
 
-    cbar = plt.colorbar(sc)
-    cbar.set_label('P2P (Peak-to-Peak)')
+    # =========================
+    plt.scatter(
+        pareto_df[x_col],
+        pareto_df[y_col],
+        s=180,
+        facecolors='none',
+        edgecolors='red',
+        linewidths=2,
+        label='Pareto Optimal'
+    )
 
-    plt.xlabel('Std (Stability)')
-    plt.ylabel('MAE (Accuracy)')
-    plt.title('Pareto Front of PID Parameter Sets')
+    # =========================
+    pareto_sorted = pareto_df.sort_values(by=x_col)
+    x_p = pareto_sorted[x_col].values
+    y_p = pareto_sorted[y_col].values
+
+    if len(x_p) >= 3:
+        coeffs = np.polyfit(x_p, y_p, 2)
+        poly = np.poly1d(coeffs)
+
+        x_fit = np.linspace(min(x_p), max(x_p), 200)
+        y_fit = poly(x_fit)
+
+        plt.plot(
+            x_fit,
+            y_fit,
+            linestyle='--',
+            linewidth=2,
+            label='Pareto Front Fit'
+        )
+    else:
+        plt.plot(x_p, y_p, linestyle='--', linewidth=2, label='Pareto Front')
+
+    # =========================
+    # Colorbar
+    # =========================
+    cbar = plt.colorbar(sc_all)
+    cbar.set_label(c_col)
+
+    plt.xlabel(x_col)
+    plt.ylabel(y_col)
+    plt.title(title)
     plt.grid(True, linestyle='--', alpha=0.4)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(save_path, dpi=300)
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
 
     print(f"Pareto front plot saved as {save_path}")
-        
+      
 def pareto_front(df, objectives):
     """
     df: pandas DataFrame
@@ -117,63 +181,107 @@ def pareto_front(df, objectives):
 # =========================
 # optimize PID parameters based on analy_report.txt
 # =========================
-def optimize_pid(report_path):
+def optimize_pid(report_path,
+                 opt_last=False,
+                 selection_mode="quantile",
+                 thresholds=None,
+                 top_k=10):
     df = load_report(report_path)
 
-    print("\n========== Loaded PID Report ==========")
-    print(df[['Group', 'Kp', 'Ki', 'Kd', 'MAE', 'Std', 'P2P', 'Dominant']])
+    last_mean_col = [c for c in df.columns if c and c.startswith("Mean_l")]
+    last_mae_col = [c for c in df.columns if c and c.startswith("MAE_l")]
+    last_mse_col = [c for c in df.columns if c and c.startswith("MSE_l")]
 
-    # =========================
-    # 1-Valuable Candidates Selection
-    # =========================
-    mae_th = df['MAE'].quantile(0.4)
-    std_th = df['Std'].quantile(0.6)
-    p2p_th = df['P2P'].quantile(0.6)
+    if opt_last and last_mean_col:
+        mean_col = last_mean_col[0]
+        mae_col = last_mae_col[0]
+        mse_col = last_mse_col[0]
 
-    candidates = df[
-        (df['MAE'] <= mae_th) &
-        (df['Std'] <= std_th) &
-        (df['P2P'] <= p2p_th)
-    ]
+        print(f"\nUsing LAST window optimization based on {mean_col}")
+
+        # =========================
+        # Candidate Selection
+        # =========================
+        if selection_mode == "quantile":
+            mae_q  = thresholds.get("mae_q", 0.4)  if thresholds else 0.4
+            mean_q = thresholds.get("mean_q", 0.4) if thresholds else 0.4
+            mse_q  = thresholds.get("mse_q", 0.6)  if thresholds else 0.6
+
+            mae_th  = df[mae_col].quantile(mae_q)
+            mean_th = df[mean_col].abs().quantile(mean_q)
+            mse_th  = df[mse_col].quantile(mse_q)
+
+            candidates = df[
+                (df[mae_col] <= mae_th) &
+                (df[mean_col].abs() <= mean_th) &
+                (df[mse_col] <= mse_th)
+            ]
+
+
+        elif selection_mode == "fixed":
+            candidates = df[
+                (df[mae_col] <= thresholds["mae"]) &
+                (df[mean_col].abs() <= thresholds["mean"]) &
+                (df[mse_col] <= thresholds["mse"])
+            ]
+
+
+        elif selection_mode == "topk":
+            score = (
+                df[mae_col].rank() +
+                df[mean_col].abs().rank() +
+                df[mse_col].rank()
+            )
+
+            df_sorted = df.iloc[score.argsort()]
+            candidates = df_sorted.head(top_k)
+
+        else:
+            raise ValueError("Invalid selection_mode")
+
+
+        objectives = [mae_col, mean_col, mse_col]
+
+    else:
+        print("\nUsing GLOBAL optimization")
+
+        mae_th = df['MAE'].quantile(0.4)
+        std_th = df['Std'].quantile(0.6)
+
+        candidates = df[
+            (df['MAE'] <= mae_th) &
+            (df['Std'] <= std_th)
+        ]
+
+        objectives = ['MAE', 'Std']
 
     print("\n========== Valuable Candidates ==========")
-    print(candidates[['Group', 'Kp', 'Ki', 'Kd', 'MAE', 'Std', 'P2P']])
+    print(candidates[['Group', 'Kp', 'Ki', 'Kd'] + (objectives if opt_last else [])])
 
-    # =========================
-    # 2-Pareto Front Identification
-    # =========================
-    pareto = pareto_front(
-        candidates,
-        objectives=['MAE', 'Std', 'P2P']
-    )
-    plot_pareto(candidates, pareto)
+    pareto = pareto_front(candidates, objectives)
+    plot_pareto(candidates, pareto, opt_last=opt_last)
 
 
     print("\n========== Pareto Front ==========")
-    print(pareto[['Group', 'Kp', 'Ki', 'Kd', 'MAE', 'Std', 'P2P']])
+    print(pareto[['Group', 'Kp', 'Ki', 'Kd']+ (objectives if opt_last else [])])
 
-    # =========================
-    # 3-Recommended Search Space Expansion
-    # =========================
-    def expand(values, ratio=0.3):
-        center = np.median(values)
-        return sorted(set([
-            round(center * (1 - ratio), 6),
-            round(center, 6),
-            round(center * (1 + ratio), 6)
-        ]))
-
-    Kp_list = expand(pareto['Kp'].values)
-    Ki_list = expand(pareto['Ki'].values)
-    Kd_list = expand(pareto['Kd'].values)
-
-    print("\n========== Recommended PID Search Space ==========")
-    print(f"Kp_list = {Kp_list};")
-    print(f"Ki_list = {Ki_list};")
-    print(f"Kd_list = {Kd_list};")
-
-    return pareto, Kp_list, Ki_list, Kd_list
+    return pareto
 
 
 if __name__ == "__main__":
-    optimize_pid("analy_report.txt")
+    # optimize_pid("analy_report.txt", opt_last=True)
+    # optimize_pid("analy_report.txt",
+    #             opt_last=True,
+    #             selection_mode="topk",
+    #             top_k=8)
+    optimize_pid("analy_report.txt",
+             opt_last=True,
+             selection_mode="quantile",
+             thresholds={"mae_q":0.9, "mean_q":0.3, "mse_q":0.9})
+    # optimize_pid("analy_report.txt",
+    #          opt_last=True,
+    #          selection_mode="fixed",
+    #          thresholds={"mae":1e-3,
+    #                      "mean":5e-4,
+    #                      "mse":1e-6})
+

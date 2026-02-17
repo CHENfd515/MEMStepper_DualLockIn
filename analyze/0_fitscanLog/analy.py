@@ -177,7 +177,7 @@ def analyze_mems_wait_time(file_path):
         # )
 
         if i == 0:
-            ax.set_ylabel('uV', fontweight='bold')
+            ax.set_ylabel('V', fontweight='bold')
         ax.grid(True, which='both', linestyle='--', alpha=0.3)
         ax.minorticks_on()
 

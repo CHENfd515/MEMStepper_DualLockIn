@@ -1,94 +1,169 @@
-import time
-import pandas as pd
-import matplotlib.pyplot as plt
 import re
-import os
+import datetime
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
-def parse_cap_log(file_path):
+def plot_capdata(file_path, debug=True):
     """
-    Parses the capdata.log file.
-    Extracts timestamps, indices, values, and units.
-    """
-    data = []
-    # Regex to match: [2026-02-04 14:30:00] Pt 000005: +1.23456e-01 uV
-    pattern = r"\[(.*?)\] Pt (\d+): ([\d\.e\+-]+) (\w+)"
+    Parses batch-structured MEMS log files, calculates average batch time intervals,
+    generates evenly spaced time points for each batch's data points, and plots:
+    1. Cap_Readout vs Time (time starts at 0 seconds)
+    2. Step vs Time (time starts at 0 seconds)
     
-    if not os.path.exists(file_path):
-        print(f"Error: {file_path} not found.")
-        return None
-
-    with open(file_path, 'r') as f:
-        for line in f:
-            match = re.search(pattern, line)
-            if match:
-                timestamp = match.group(1)
-                idx = int(match.group(2))
-                val = float(match.group(3))
-                unit = match.group(4)
-                data.append({
-                    'Timestamp': timestamp,
-                    'Index': idx,
-                    'Value': val,
-                    'Unit': unit
-                })
+    Args:
+        file_path (str): Path to log file
+        debug (bool): Whether to print debug information
+    """
+    # --------------------------
+    # Step 1: Regex Patterns for Parsing
+    # --------------------------
+    # Pattern 1: Match LOG BATCH header (capture batch timestamp and count)
+    batch_header_pattern = re.compile(
+        r">> LOG BATCH: (?P<batch_ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}) \| Count: (?P<count>\d+) <<"
+    )
     
-    return pd.DataFrame(data)
+    # Pattern 2: Match data points (capture Pt ID, Cap_Readout, step)
+    data_point_pattern = re.compile(
+        r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}\] Pt (?P<pt_id>\d+): (?P<Cap_Readout>[\+\-]\d+\.\d+e[\+\-]\d+) V \[step=(?P<step>\s*\d+\.\d+)\]"
+    )
 
-def plot_data(df, start_idx=None, end_idx=None):
-    """
-    Plots the data within a specific index range.
-    """
-    if df is None or df.empty:
-        print("No data to plot.")
+    # --------------------------
+    # Step 2: Parse Log File
+    # --------------------------
+    batch_data = []  # Store all batches: [{"batch_ts": datetime, "count": int, "points": [...]}, ...]
+    current_batch = None
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Match batch header
+                batch_match = batch_header_pattern.match(line)
+                if batch_match:
+                    # Finalize previous batch if exists
+                    if current_batch:
+                        batch_data.append(current_batch)
+                    
+                    # Initialize new batch
+                    batch_ts_str = batch_match.group('batch_ts')
+                    count = int(batch_match.group('count'))
+                    current_batch = {
+                        "batch_ts": datetime.datetime.strptime(batch_ts_str, '%Y-%m-%d %H:%M:%S.%f'),
+                        "count": count,
+                        "points": []
+                    }
+                    if debug:
+                        print(f"[DEBUG] Found Batch at line {line_num}: TS={batch_ts_str}, Count={count}")
+                    continue
+
+                # Match data point (only if in a batch)
+                if current_batch:
+                    point_match = data_point_pattern.match(line)
+                    if point_match:
+                        try:
+                            pt_id = int(point_match.group('pt_id'))
+                            Cap_Readout = float(point_match.group('Cap_Readout'))
+                            step = float(point_match.group('step').strip())
+                            current_batch["points"].append({
+                                "pt_id": pt_id,
+                                "Cap_Readout": Cap_Readout,
+                                "step": step
+                            })
+                        except ValueError as ve:
+                            if debug:
+                                print(f"[DEBUG] Invalid data point at line {line_num}: {ve}")
+                            continue
+
+            # Add the last batch
+            if current_batch:
+                batch_data.append(current_batch)
+
+    except Exception as e:
+        print(f"Error reading/parsing file: {e}")
         return
 
-    # Filter data based on custom range
-    if start_idx is None: start_idx = df['Index'].min()
-    if end_idx is None: end_idx = df['Index'].max()
-    
-    mask = (df['Index'] >= start_idx) & (df['Index'] <= end_idx)
-    filtered_df = df.loc[mask]
-
-    if filtered_df.empty:
-        print(f"No data found in range [{start_idx} : {end_idx}]")
+    if not batch_data:
+        print("No batch data found in file.")
         return
+    print(f"Successfully parsed {len(batch_data)} batches")
 
-    # Create Plot
-    plt.figure(figsize=(12, 6))
-    plt.plot(filtered_df['Index'], filtered_df['Value'], 
-             marker='o', markersize=3, linestyle='-', linewidth=1, color='#2c3e50')
-    
-    # Formatting
-    unit = filtered_df['Unit'].iloc[0]
-    plt.title(f'Capacitance Data Analysis (Index {start_idx} to {end_idx})', fontweight='bold')
-    plt.xlabel('Sample Index')
-    plt.ylabel(f'Value ({unit})')
-    plt.grid(True, linestyle='--', alpha=0.7)
-    
-    # Annotate first and last timestamp of the selection
-    plt.annotate(f"Start: {filtered_df['Timestamp'].iloc[0]}", 
-                 xy=(0.02, 0.95), xycoords='axes fraction', fontsize=9, verticalalignment='top')
-    plt.annotate(f"End: {filtered_df['Timestamp'].iloc[-1]}", 
-                 xy=(0.02, 0.90), xycoords='axes fraction', fontsize=9, verticalalignment='top')
+    # --------------------------
+    # Step 3: Calculate Time Intervals & Generate Time Points
+    # --------------------------
+    # Convert batch timestamps to epoch seconds (for calculation)
+    batch_timestamps = [b["batch_ts"].timestamp() for b in batch_data]
+    all_plot_data = []  # Final data for plotting: [(time_sec, Cap_Readout, step), ...]
 
-    plt.tight_layout()
-    
-    timestamp = time.strftime("%m%d")
-    plt.savefig('capdata_analysis_{}.png'.format(timestamp), dpi=300)
-    # plt.show()
-    
+    if len(batch_data) == 1:
+        # Case 1: Only 1 batch - use arbitrary small interval (0.1s between points)
+        batch = batch_data[0]
+        num_points = len(batch["points"])
+        time_interval = 0.1  # 100ms between points
+        for i, point in enumerate(batch["points"]):
+            time_sec = i * time_interval
+            all_plot_data.append((time_sec, point["Cap_Readout"], point["step"]))
+        print(f"Single batch detected - using {time_interval}s interval between points")
 
-if __name__ == "__main__":
-    LOG_FILE = 'capdata.log'
-    
-    # 1. Load data
-    df_logs = parse_cap_log(LOG_FILE)
-    
-    if df_logs is not None:
-        print(f"Total points loaded: {len(df_logs)}")
-        print(f"Index range: {df_logs['Index'].min()} to {df_logs['Index'].max()}")
+    else:
+        # Case 2: Multiple batches - calculate average batch interval
+        # Compute time differences between consecutive batches
+        batch_intervals = []
+        for i in range(1, len(batch_timestamps)):
+            interval = batch_timestamps[i] - batch_timestamps[i-1]
+            batch_intervals.append(interval)
         
-        # 2. Set your custom range here
-        # Example: start_idx=100, end_idx=500
-        # Leave as None to plot everything
-        plot_data(df_logs, start_idx=None, end_idx=None)
+        avg_batch_interval = np.mean(batch_intervals)
+        print(f"Average batch time interval: {avg_batch_interval:.6f} seconds")
+
+        # Generate evenly spaced time points for each batch's points
+        cumulative_time = 0.0  # Start at 0 seconds
+        for batch_idx, batch in enumerate(batch_data):
+            num_points = len(batch["points"])
+            if num_points == 0:
+                continue
+            
+            # Evenly split batch interval into count points
+            point_interval = avg_batch_interval / num_points
+            
+            # Assign time to each point in the batch
+            for i, point in enumerate(batch["points"]):
+                time_sec = cumulative_time + (i * point_interval)
+                all_plot_data.append((time_sec, point["Cap_Readout"], point["step"]))
+            
+            # Update cumulative time for next batch
+            cumulative_time += avg_batch_interval
+
+    # Convert to DataFrame for easy plotting
+    df = pd.DataFrame(all_plot_data, columns=["time_sec", "Cap_Readout", "step"])
+
+    # --------------------------
+    # Step 4: Generate Plots
+    # --------------------------
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    plt.subplots_adjust(hspace=0.3)
+
+    # Subplot 1: Cap_Readout vs Time (seconds)
+    ax1.plot(df["time_sec"], df["Cap_Readout"], marker='o', linestyle='-', color='blue', alpha=0.7, markersize=2)
+    ax1.set_title('Cap_Readout vs Time (Start at 0 Seconds)')
+    ax1.set_ylabel('Cap_Readout (V)')
+    ax1.grid(True, alpha=0.3)
+
+    # Subplot 2: Step vs Time (seconds)
+    ax2.plot(df["time_sec"], df["step"], marker='s', linestyle='-', color='red', alpha=0.7, markersize=2)
+    ax2.set_title('Step vs Time (Start at 0 Seconds)')
+    ax2.set_xlabel('Time (seconds)')
+    ax2.set_ylabel('Step Value')
+    ax2.grid(True, alpha=0.3)
+
+    # plt.show()
+    date_now = datetime.datetime.now().strftime("%m%d")
+    plt.savefig("capdata_plots_{}.png".format(date_now))
+
+# --------------------------
+# Example Usage
+# --------------------------
+plot_capdata("capdata.log", debug=True)

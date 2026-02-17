@@ -92,6 +92,8 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         DriveVoltageEditField_2Label    matlab.ui.control.Label
         DriveVoltageEditField_2         matlab.ui.control.NumericEditField
         PositioningFeedbackTab          matlab.ui.container.Tab
+        PIDwaitsEditFieldLabel          matlab.ui.control.Label
+        PIDwaitsEditField               matlab.ui.control.NumericEditField
         LogPlotSwitch                   matlab.ui.control.Switch
         LogPlotSwitchLabel              matlab.ui.control.Label
         KdEditField                     matlab.ui.control.NumericEditField
@@ -108,7 +110,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         FilterWinEditField              matlab.ui.control.NumericEditField
         FilterWinEditFieldLabel         matlab.ui.control.Label
         CANCELButton                    matlab.ui.control.Button
-        FinalMicrostepDropDown          matlab.ui.control.DropDown
+        PIDMicrostepDropDown            matlab.ui.control.DropDown
         FinalMicrostepLabel             matlab.ui.control.Label
         StepMinLossEditField            matlab.ui.control.NumericEditField
         StepMinLossEditFieldLabel       matlab.ui.control.Label
@@ -193,9 +195,9 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         LockIn          % VISA object for SR830 (typically for driving/control)
         LockIn_Read     % VISA object for secondary Lock-In (SR844) for sensing
         prev_closed = false % Safety flag to verify previous VISA session closure
-        positioningSTOP = true  % Global interrupt flag to stop feedback and movement
-        plotCapFBloss = false   % Global plot flag for detecting feedback process
-        default_wait_time = 0.1 % Ensures the Lock-in amplifier's integration (Time Constant) has settled.
+        positioningSTOP = true    % Global interrupt flag to stop feedback and movement
+        plotCapFBloss = false     % Global plot flag for detecting feedback process
+        default_wait_time = 0.003 % 3ms, Ensures the Lock-in amplifier's integration (Time Constant) has settled.
         
         % --- Fitting & Coordinate Data ---
         k_fit           % Slope of the linear fit: d(Cap)/d(Step)
@@ -996,502 +998,512 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         end
 
 
-        function goTo_fb(app, volt, target_pos, microstep2)
-            % This function is designed for scan best PID sets
-            
-            % --- 1. Control & Target Initialization ---                
-            % --- Start overall timer ---
-            total_timer = tic; 
-
-            speed = app.SpeedstepsEditField_2.Value;
-            navg = max(1, app.FilterWinEditField.Value);
-            step_tolerance = abs(app.StepMinLossEditField.Value);
-            demanded_x = target_pos;
-            y_theoretical = app.k_fit * demanded_x + app.b_fit;
-            
-            wait_time = 1.0;
-            fprintf("[LOG] goTo_fb (scan version):\twait_time=%.4f s\n", wait_time);
-            
-            % --- 2. Define Parameter Sweep Combinations ---
-            Kp_list = [0.005, 0.3, 0.45];
-            Ki_list = [0.001, 0.002, 0.01];
-            Kd_list = [0.01, 0.02, 0.1];
-            pts_per_config = 300; 
-            
-            % Generate combination matrix (N x 3)
-            [KP, KI, KD] = meshgrid(Kp_list, Ki_list, Kd_list);
-            configs = [KP(:), KI(:), KD(:)]; 
-            zero_config = [0, 0, 0];
-            configs = [configs; zero_config];
-            
-            % % Define combination matrix
-            % specific_configs = [
-            %     0.3,   0.002, 0.02;    % best (G3)
-            %     0.3,   0.005, 0.02;    % +I
-            %     0.3,   0.01,  0.02;    % ++I
-            %     0.3,   0.002, 0.05;    % +D
-            %     0.3,   0.002, 0.09;    % ++D
-            %     0.005, 0.01,  0.01;     % vibrate
-            % ];
-            % 
-            % configs = [specific_configs; zero_config];
-
-            num_configs = size(configs, 1);
-            
-            % --- 3. Memory & Log Initialization ---
-            app.capFitData = zeros(num_configs * pts_per_config, 2); 
-            pt_count = 0;
-            
-            % Open log file
-            fid = fopen(app.LogFileName, 'a');
-            if fid == -1, error('[LOG] Could not create log file.'); end
-            
-            % Force initial position for the very first group
-            force_org_step = 5;
-            fprintf("[LOG] Forcing initial x=%d before starting sweeps.\n", force_org_step);
-            app.setVoltages(volt, force_org_step * 120);
-            app.CurrentStepEditField.Value = force_org_step;
-            
-            % --- 4. Main Sweep Loop ---
-            for c = 1:num_configs
-                % Apply current PID parameters
-                Kp = configs(c, 1);
-                Ki = configs(c, 2);
-                Kd = configs(c, 3);
-                app.KpEditField.Value = Kp;
-                app.KiEditField.Value = Ki;
-                app.KdEditField.Value = Kd;
-                
-                % Reset PID state when switching parameters
-                integral_error = 0;
-                last_error_step = 0;
-                
-                % MODIFICATION: Initialize PID pause counter
-                pid_pause_counter = 0;
-                
-                dt = wait_time * navg;
-                
-                % --- 5. Data Collection (Inner Loop) ---
-                for s = 1:pts_per_config
-                    if app.positioningSTOP, break; end 
-                    
-                    % --- A. Data Acquisition ---
-                    app.tim.stop(); 
-                    temp_data = zeros(1, navg);
-                    for n = 1:navg
-                        pause(wait_time); 
-                        app.readLockin();
-                        temp_data(n) = app.capData(end);
-                    end
-                    if strcmp(app.StartStopCapButton.Text{1}, "Stop") && strcmp(app.tim.Running, 'off')
-                        app.tim.start(); 
-                    end
-                    
-                    % --- B. Error Calculation ---
-                    y_actual_filtered = mean(temp_data);
-                    current_x = app.CurrentStepEditField.Value;
-                    cap_loss = y_theoretical - y_actual_filtered; 
-                    error_step = cap_loss / app.k_fit;
-                    
-                    % --- C. PID Control / Force Step Logic ---    
-                    pt_count = pt_count + 1; % Total counter
-                    fprintf("[DEBUG] pt_count=%d, pid_pause_counter=%d [mod(pt_count, 100)=%d]\n", pt_count, pid_pause_counter, mod(pt_count, 100));
-                    % Every pts_per_config points, force step and pause PID
-                    if (mod(pt_count, pts_per_config) == 1) && (Kp ~=0)
-                        % fprintf("[DEBUG] pid_pause_counter=%d\n", pid_pause_counter);
-                        new_x = force_org_step;
-                        status_str = 'FORCE STEP';
-                        
-                        % Reset PID state
-                        integral_error = 0;
-                        last_error_step = 0;
-                        
-                        % Pause PID calculations for the next 10 points
-                        pid_pause_counter = 10;
-                        
-                    elseif pid_pause_counter > 0
-                        % --- PID Paused Phase (P=I=D=0) ---
-                        P_out = 0; I_out = 0; D_out = 0; dynamic_step = 0;
-                        new_x = current_x; % Hold position
-                        status_str = 'PID PAUSED';
-                        pid_pause_counter = pid_pause_counter - 1;
-                        
-                    elseif microstep2 > 256
-                        % --- Normal PID Adjustment ---
-                        P_out = Kp * error_step;
-                        if abs(error_step) > step_tolerance
-                            integral_error = integral_error + (error_step * dt);
-                        end
-                        I_out = Ki * integral_error;
-                        derivative_error = (error_step - last_error_step) / dt;
-                        D_out = Kd * derivative_error;
-                        dynamic_step = P_out + I_out + D_out;
-                        last_error_step = error_step;
-                        
-                        max_safe_step = 10; 
-                        if abs(dynamic_step) > max_safe_step
-                            dynamic_step = sign(dynamic_step) * max_safe_step;
-                        end
-                        
-                        new_x = current_x + dynamic_step;
-                        status_str = 'PID ADJ';
-                    else
-                        % --- Non-PID Adjustment ---
-                        P_out = 0; I_out = 0; D_out = 0; dynamic_step = 0;
-                        if abs(error_step) <= step_tolerance
-                            status_str = 'STABLE';
-                            new_x = current_x; 
-                        else
-                            status_str = 'ADJUSTING';
-                            new_x = current_x + sign(error_step) * (1 / microstep2);
-                        end
-                    end
-                    
-                    % --- D. Execute Hardware Move ---
-                    if ~strcmp(status_str, 'STABLE')
-                        app.setVoltages(volt, new_x * 120);
-                        app.CurrentStepEditField.Value = new_x;
-                        current_x = new_x; % Update local variable for recording
-                    end
-                    
-                    % --- E. Recording & UI Update ---
-                    app.capFitData(pt_count, :) = [current_x, y_actual_filtered];
-                    
-                    % [ ... UI Plotting logic remains the same ... ]
-                    if isprop(app, 'plotCapFBloss') && app.plotCapFBloss
-                        ax_fb = app.AxesCapReadout;
-                        hFBTrace = findobj(ax_fb, 'Tag', 'fb_loss_trace');
-                        if isempty(hFBTrace) || ~isgraphics(hFBTrace)
-                            cla(ax_fb); hold(ax_fb, 'on');
-                            yline(ax_fb, y_theoretical, '--r', 'LineWidth', 1.2, 'HandleVisibility', 'off');
-                            hFBTrace = plot(ax_fb, NaN, NaN, '-o', 'Color', [0 0.5 0], ...
-                                'LineWidth', 1.2, 'MarkerSize', 5, ...
-                                'MarkerFaceColor', [0 0.8 0], 'Tag', 'fb_loss_trace');
-                            hold(ax_fb, 'off'); grid(ax_fb, 'on');
-                            ylabel(ax_fb, 'Capacitance'); xlabel(ax_fb, 'Sample Index');
-                        end
-                        currentX = hFBTrace.XData; currentY = hFBTrace.YData;
-                        newXData = [currentX(~isnan(currentX)), pt_count];
-                        newYData = [currentY(~isnan(currentY)), y_actual_filtered];
-                        if length(newXData) > 20
-                            newXData = newXData(end-19:end); newYData = newYData(end-19:end);
-                        end
-                        set(hFBTrace, 'XData', newXData, 'YData', newYData);
-                        if abs(app.k_fit) > 0
-                            equiv_step_loss = -cap_loss / app.k_fit;
-                        else
-                            equiv_step_loss = 0;
-                        end
-                        legStr = sprintf('C_{act}\nΔC:%.2e\nΔStep:%.3f', cap_loss, equiv_step_loss);
-                        legend(ax_fb, legStr, 'Location', 'northoutside', 'FontSize', 9, 'FontWeight', 'bold');
-                    end
-                    
-                    % --- F. Fixed-Width Formatted Logging ---
-                    step_loss_from_cap = cap_loss / app.k_fit;
-                    fmt = ['Cap(theor-act): [%11.3e - %11.3e = %11.3e] | ', ...
-                           'Step Loss (=Cap/k_fit): [%7.3f] | ', ...
-                           'Gains(P,I,D): [%.2e, %.2e, %.2e] | ', ...
-                           'PID_Out(P+I+D): [%7.4f + %7.4f + %7.4f = %+10.4f] @ %s [%-15s] @ Step [%.4e]\n'];
-                    % Update logging arguments based on status
-                    if strcmp(status_str, 'FORCE STEP') || strcmp(status_str, 'PID PAUSED')
-                        log_args = {y_theoretical, y_actual_filtered, cap_loss, ...
-                                    step_loss_from_cap, Kp, Ki, Kd, ...
-                                    0, 0, 0, 0, ... % Outputs are effectively zero or forced
-                                    datetime('now','Format','HH:mm:ss'), status_str, current_x};
-                    else
-                        log_args = {y_theoretical, y_actual_filtered, cap_loss, ...
-                                    step_loss_from_cap, Kp, Ki, Kd, ...
-                                    P_out, I_out, D_out, dynamic_step, ...
-                                    datetime('now','Format','HH:mm:ss'), status_str, current_x};
-                    end
-                    
-                    fprintf(fmt, log_args{:});      % Command Window
-                    fprintf(fid, fmt, log_args{:}); % Log File
-                    drawnow limitrate; 
-                end
-                if app.positioningSTOP, break; end
-            end
-            
-            % --- 6. Cleanup ---
-            fclose(fid);
-            app.capFitData = app.capFitData(1:pt_count, :);
-            total_time = toc(total_timer);
-            fprintf("\n[DONE] Auto-sweep completed. Total points: %d. Total Time: %.2f seconds\n", pt_count, total_time);
-        end
-
-
         % function goTo_fb(app, volt, target_pos, microstep2)
-        %     % GOTO_FB (PID): High-precision PID feedback with optimized memory and formatted logging.
+        %     % This function is designed for scan best PID sets
         % 
-        %     % --- 1. Control & Target Initialization ---
+        %     % --- 1. Control & Target Initialization ---                
+        %     % --- Start overall timer ---
+        %     total_timer = tic; 
+        % 
         %     navg = max(1, app.FilterWinEditField.Value);
         %     step_tolerance = abs(app.StepMinLossEditField.Value);
-        %     demanded_x = target_pos; % Theoretical target position
-        %     y_theoretical = app.k_fit * demanded_x + app.b_fit; % Theoretical target capacitance
+        %     demanded_x = target_pos;
+        %     y_theoretical = app.k_fit * demanded_x + app.b_fit;
         % 
-        %     % Sampling and system settling interval
-        %     % wait_time = max(0.01, 1/(speed * microstep2)); 
-        %     wait_time = max(app.default_wait_time, 1/speed);
-        %     fprintf("[LOG] goTo_fb:\twait_time=%.4f s\n", wait_time);
+        %     % speed = app.SpeedstepsEditField_2.Value;
+        %     wait_time = max(app.default_wait_time, app.PIDwaitsEditField.Value);
+        %     if wait_time ~= (1/app.SpeedstepsEditField_2.Value)
+        %         fprintf("[WARING] goTo_fb (scan version):\tmodeling sampling time is not equal to feedback sampling time!\n")
+        %     end
+        %     fprintf("[LOG] goTo_fb (scan version):\twait_time=%.4f s. (>= default %.4f s)\n", wait_time, app.default_wait_time);
         % 
-        %     % --- 2. PID Coefficients ---
-        %     max_safe_step = 10;
-        %     % Kp = app.KpEditField.Value;      % Proportional Gain
-        %     % Ki = app.KiEditField.Value;      % Integral Gain
-        %     % Kd = app.KdEditField.Value;      % Derivative Gain
+        %     % --- 2. Define Parameter Sweep Combinations ---
+        %     % Kp_list = [0.005, 0.15, 0.3, 0.45];
+        %     % Ki_list = [0.001, 0.002, 0.008, 0.01];
+        %     % Kd_list = [0.01, 0.02, 0.08, 0.1];
+        %     Kp_list = [0.3, 0.35, 0.4, 0.45, 0.5]; 
+        %     Ki_list = [0.002, 0.0005, 0.0015]; 
+        %     Kd_list = [0.05, 0.1, 0.15, 0.2];
+        %     pts_per_config = 300; 
         % 
-        %     % PID State Variables
-        %     integral_error = 0;
-        %     last_error_step = 0;
-        %     dt = wait_time * navg; % Effective loop time step
+        %     % Generate combination matrix (N x 3)
+        %     [KP, KI, KD] = meshgrid(Kp_list, Ki_list, Kd_list);
+        %     configs = [KP(:), KI(:), KD(:)]; 
+        %     zero_config = [0, 0, 0];
+        %     configs = [configs; zero_config];
         % 
-        %     % --- 3. Performance Optimization: Memory Pre-allocation ---
-        %     % Prevents the O(N) overhead of dynamic array resizing
-        %     max_pts = 50000; 
-        %     app.capFitData = zeros(max_pts, 2); 
+        %     % % Define combination matrix
+        %     % specific_configs = [
+        %     %     0.3,   0.002, 0.02;    % best (G3)
+        %     %     0.3,   0.005, 0.02;    % +I
+        %     %     0.3,   0.01,  0.02;    % ++I
+        %     %     0.3,   0.002, 0.05;    % +D
+        %     %     0.3,   0.002, 0.09;    % ++D
+        %     %     0.005, 0.01,  0.01;     % vibrate
+        %     % ];
+        %     % 
+        %     % configs = [specific_configs; zero_config];
+        % 
+        %     num_configs = size(configs, 1);
+        % 
+        %     % --- 3. Memory & Log Initialization ---
+        %     app.capFitData = zeros(num_configs * pts_per_config, 2); 
         %     pt_count = 0;
         % 
-        %     % --- 4. UI/Graphics Setup (Full Recovery with Optimized Handles) ---
-        %     % Log file
+        %     % Open log file
         %     fid = fopen(app.LogFileName, 'a');
-        %     if fid == -1
-        %         error('[LOG] Could not create log file.');
-        %     end
+        %     if fid == -1, error('[LOG] Could not create log file.'); end
         % 
-        %     % Prepare Plot
-        %     if strcmp(app.LogPlotSwitch.Value, "On")
-        %         ax = app.AxesCapFitting;
-        %         % A. Cleanup: Clear redundant data points from previous sessions
-        %         hOldPoints = findobj(ax, 'Type', 'line', 'Color', 'r', 'Marker', 'o');
-        %         if ~isempty(hOldPoints), delete(hOldPoints); end
-        %         % B. Handle Management: Seek existing specialized plot handles
-        %         hTrace = findobj(ax, 'Tag', 'trace_line');
-        %         hPoint = findobj(ax, 'Tag', 'current_pt');
-        %         hTheo  = findobj(ax, 'Tag', 'target_pt');
-        %         % C. Initialization: Create plot objects if they don't exist
-        %         if isempty(hTrace)
-        %             hold(ax, 'on');
-        %             % Target crosshair (Horizontal & Vertical references)
-        %             yline(ax, y_theoretical, '--', 'Color', [0.7 0.7 0.7], 'LineWidth', 0.5, 'HandleVisibility', 'off');
-        %             xline(ax, demanded_x, '--', 'Color', [0.7 0.7 0.7], 'LineWidth', 0.5, 'HandleVisibility', 'off');
-        %             % Target point (The static goal)
-        %             hTheo = plot(ax, demanded_x, y_theoretical, 'o', 'Color', 'r', 'MarkerFaceColor', 'b', 'MarkerSize', 8, ...
-        %                 'DisplayName', 'Target Point', 'Tag', 'target_pt');
-        %             % Trace line (Recent historical path)
-        %             hTrace = plot(ax, NaN, NaN, 'o-', 'Color', [0 0 0.5], 'MarkerSize', 4, 'DisplayName', 'Trace Path', 'Tag', 'trace_line');
-        %             % Current position (Real-time marker)
-        %             hPoint = plot(ax, NaN, NaN, '+r', 'LineWidth', 2, 'MarkerSize', 12, 'DisplayName', 'Current Pos', 'Tag', 'current_pt');
-        %             hold(ax, 'off');
+        %     % Force initial position for the very first group
+        %     force_org_step = 5;
+        %     fprintf("[LOG] Forcing initial x=%d before starting sweeps.\n", force_org_step);
+        %     app.setVoltages(volt, force_org_step * 120);
+        %     app.CurrentStepEditField.Value = force_org_step;
         % 
-        %             % Restore the legend for user clarity
-        %             legend(ax, [hTheo, hTrace, hPoint], 'Location', 'northwest', 'FontSize', 7);
-        %         else
-        %             % If handles exist but target has changed, update Target Point and X/Y lines
-        %             set(hTheo, 'XData', demanded_x, 'YData', y_theoretical);
-        %             % (Note: To update yline/xline dynamically you'd need their handles, 
-        %             % but usually 'cla' or deleting old ones at start is simpler).
-        %         end
-        %         max_dist_x = 0; max_dist_y = 0;
-        %     end
+        %     % --- 4. Main Sweep Loop ---
+        %     for c = 1:num_configs
+        %         % Apply current PID parameters
+        %         Kp = configs(c, 1);
+        %         Ki = configs(c, 2);
+        %         Kd = configs(c, 3);
+        %         app.KpEditField.Value = Kp;
+        %         app.KiEditField.Value = Ki;
+        %         app.KdEditField.Value = Kd;
         % 
-        %     last_status = "";
+        %         % Reset PID state when switching parameters
+        %         integral_error = 0;
+        %         last_error_step = 0;
         % 
-        %     % --- 5. Main PID Feedback Loop ---
-        %     while (~app.positioningSTOP)
-        %         % --- A. Data Acquisition ---
-        %         Kp = app.KpEditField.Value;      % Proportional Gain
-        %         Ki = app.KiEditField.Value;      % Integral Gain
-        %         Kd = app.KdEditField.Value;      % Derivative Gain
+        %         % MODIFICATION: Initialize PID pause counter
+        %         pid_pause_counter = 0;
         % 
-        %         app.tim.stop(); % Pause background timer to avoid VISA conflicts
-        %         temp_data = zeros(1, navg);
-        %         for n = 1:navg
-        %             pause(wait_time); 
-        %             app.readLockin();
-        %             temp_data(n) = app.capData(end);
-        %         end
-        %         if strcmp(app.StartStopCapButton.Text{1}, "Stop")
-        %             if strcmp(app.tim.Running, 'off'), app.tim.start(); end
-        %         else
-        %             % fprintf('Timer is already active, skipping start.\n');
-        %         end
+        %         dt = wait_time * navg;
         % 
+        %         % --- 5. Data Collection (Inner Loop) ---
+        %         for s = 1:pts_per_config
+        %             if app.positioningSTOP, break; end 
         % 
-        %         % --- B. Error Calculation (Capacitance Domain) ---
-        %         y_actual_filtered = mean(temp_data);
-        %         current_x = app.CurrentStepEditField.Value;
-        %         cap_loss = y_theoretical - y_actual_filtered; 
-        %         error_step = cap_loss / app.k_fit;
-        % 
-        %         % --- C. PID Control (Step Domain) ---    
-        %         if microstep2 > 256 % <CASE A> PID Continuous Feedback Control (High-Resolution)
-        %             % Proportional term
-        %             P_out = Kp * error_step;
-        % 
-        %             % Integral term (with Anti-windup deadzone)
-        %             % Even if this if-condition isn't met, integral_error already equals 0
-        %             if abs(error_step) > step_tolerance
-        %                 integral_error = integral_error + (error_step * dt);
+        %             % --- A. Data Acquisition ---
+        %             app.tim.stop(); 
+        %             temp_data = zeros(1, navg);
+        %             for n = 1:navg
+        %                 pause(wait_time); 
+        %                 app.readLockin();
+        %                 temp_data(n) = app.capData(end);
         %             end
-        %             I_out = Ki * integral_error;
-        % 
-        %             % Derivative term
-        %             derivative_error = (error_step - last_error_step) / dt;
-        %             D_out = Kd * derivative_error;
-        % 
-        %             % Combined PID Output
-        %             dynamic_step = P_out + I_out + D_out;
-        %             last_error_step = error_step;
-        % 
-        %             % Safety Clamping 
-        %             if abs(dynamic_step) > max_safe_step
-        %                 dynamic_step = sign(dynamic_step) * max_safe_step;
+        %             if strcmp(app.StartStopCapButton.Text{1}, "Stop") && strcmp(app.tim.Running, 'off')
+        %                 app.tim.start(); 
         %             end
         % 
-        %             new_x = current_x + dynamic_step;
-        %             status_str = 'PID ADJ';
+        %             % --- B. Error Calculation ---
+        %             y_actual_filtered = mean(temp_data);
+        %             current_x = app.CurrentStepEditField.Value;
+        %             cap_loss = y_theoretical - y_actual_filtered; 
+        %             error_step = cap_loss / app.k_fit;
         % 
-        %         else % <CASE B> Fixed Step Logic (Standard Resolution)
-        %             % We reset PID components to zero for clean logging in this mode
-        %             P_out = 0; I_out = 0; D_out = 0; dynamic_step = 0;
+        %             % --- C. PID Control / Force Step Logic ---    
+        %             pt_count = pt_count + 1; % Total counter
+        %             fprintf("[DEBUG] pt_count=%d, pid_pause_counter=%d [mod(pt_count, 100)=%d]\n", pt_count, pid_pause_counter, mod(pt_count, 100));
+        %             % Every pts_per_config points, force step and pause PID
+        %             if (mod(pt_count, pts_per_config) == 1) && (Kp ~=0)
+        %                 % fprintf("[DEBUG] pid_pause_counter=%d\n", pid_pause_counter);
+        %                 new_x = force_org_step;
+        %                 status_str = 'FORCE STEP';
         % 
-        %             if abs(error_step) <= step_tolerance
-        %                 status_str = 'STABLE';
-        %                 new_x = current_x; 
+        %                 % Reset PID state
+        %                 integral_error = 0;
+        %                 last_error_step = 0;
+        % 
+        %                 % Pause PID calculations for the next 10 points
+        %                 pid_pause_counter = 10;
+        % 
+        %             elseif pid_pause_counter > 0
+        %                 % --- PID Paused Phase (P=I=D=0) ---
+        %                 P_out = 0; I_out = 0; D_out = 0; dynamic_step = 0;
+        %                 new_x = current_x; % Hold position
+        %                 status_str = 'PID PAUSED';
+        %                 pid_pause_counter = pid_pause_counter - 1;
+        % 
+        %             elseif microstep2 > 256
+        %                 % --- Normal PID Adjustment ---
+        %                 P_out = Kp * error_step;
+        %                 if abs(error_step) > step_tolerance
+        %                     integral_error = integral_error + (error_step * dt);
+        %                 end
+        %                 I_out = Ki * integral_error;
+        %                 derivative_error = (error_step - last_error_step) / dt;
+        %                 D_out = Kd * derivative_error;
+        %                 dynamic_step = P_out + I_out + D_out;
+        %                 last_error_step = error_step;
+        % 
+        %                 max_safe_step = 10; 
+        %                 if abs(dynamic_step) > max_safe_step
+        %                     dynamic_step = sign(dynamic_step) * max_safe_step;
+        %                 end
+        % 
+        %                 new_x = current_x + dynamic_step;
+        %                 status_str = 'PID ADJ';
         %             else
-        %                 status_str = 'ADJUSTING';
-        %                 % Direction is the sign of the step error
-        %                 direction = sign(error_step);
-        %                 new_x = current_x + direction * (1 / microstep2);
+        %                 % --- Non-PID Adjustment ---
+        %                 P_out = 0; I_out = 0; D_out = 0; dynamic_step = 0;
+        %                 if abs(error_step) <= step_tolerance
+        %                     status_str = 'STABLE';
+        %                     new_x = current_x; 
+        %                 else
+        %                     status_str = 'ADJUSTING';
+        %                     new_x = current_x + sign(error_step) * (1 / microstep2);
+        %                 end
         %             end
-        %         end
         % 
-        %         % --- Execute Hardware Move ---
-        %         if ~strcmp(status_str, 'STABLE')
-        %             app.setVoltages(volt, new_x * 120);
-        %             app.CurrentStepEditField.Value = new_x;
-        %             current_x = new_x;
-        %         end
+        %             % --- D. Execute Hardware Move ---
+        %             if ~strcmp(status_str, 'STABLE')
+        %                 app.setVoltages(volt, new_x * 120);
+        %                 app.CurrentStepEditField.Value = new_x;
+        %                 current_x = new_x; % Update local variable for recording
+        %             end
         % 
-        %         % --- E. Fast Data Recording ---
-        %         pt_count = pt_count + 1;
-        %         if pt_count <= max_pts
+        %             % --- E. Recording & UI Update ---
         %             app.capFitData(pt_count, :) = [current_x, y_actual_filtered];
-        %         else
-        %             app.capFitData(end+1, :) = [current_x, y_actual_filtered];
-        %         end
         % 
-        %         % --- F. High-Efficiency Visualization ---
-        %         % --- app.AxesCapReadout ---
-        %         if isprop(app, 'plotCapFBloss') && app.plotCapFBloss
-        %             ax_fb = app.AxesCapReadout; % Target axes for real-time tracking
-        % 
-        %             % Find the handle using Tag to avoid redundant plot objects
-        %             hFBTrace = findobj(ax_fb, 'Tag', 'fb_loss_trace');
-        % 
-        %             % If handle is missing (first run or cleared), initialize the plot
-        %             if isempty(hFBTrace) || ~isgraphics(hFBTrace)
-        %                 cla(ax_fb);
-        %                 hold(ax_fb, 'on');
-        % 
-        %                 % Draw horizontal dashed line as the setpoint reference
-        %                 yline(ax_fb, y_theoretical, '--r', 'LineWidth', 1.2, 'HandleVisibility', 'off');
-        % 
-        %                 % Initialize the dynamic trace line with specific markers
-        %                 hFBTrace = plot(ax_fb, NaN, NaN, '-o', 'Color', [0 0.5 0], ...
-        %                     'LineWidth', 1.2, 'MarkerSize', 5, ...
-        %                     'MarkerFaceColor', [0 0.8 0], 'Tag', 'fb_loss_trace');
-        % 
-        %                 hold(ax_fb, 'off');
-        %                 grid(ax_fb, 'on');
-        %                 % Ensure labels are set for clarity
-        %                 ylabel(ax_fb, 'Capacitance');
-        %                 xlabel(ax_fb, 'Sample Index');
+        %             % [ ... UI Plotting logic remains the same ... ]
+        %             if isprop(app, 'plotCapFBloss') && app.plotCapFBloss
+        %                 ax_fb = app.AxesCapReadout;
+        %                 hFBTrace = findobj(ax_fb, 'Tag', 'fb_loss_trace');
+        %                 if isempty(hFBTrace) || ~isgraphics(hFBTrace)
+        %                     cla(ax_fb); hold(ax_fb, 'on');
+        %                     yline(ax_fb, y_theoretical, '--r', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+        %                     hFBTrace = plot(ax_fb, NaN, NaN, '-o', 'Color', [0 0.5 0], ...
+        %                         'LineWidth', 1.2, 'MarkerSize', 5, ...
+        %                         'MarkerFaceColor', [0 0.8 0], 'Tag', 'fb_loss_trace');
+        %                     hold(ax_fb, 'off'); grid(ax_fb, 'on');
+        %                     ylabel(ax_fb, 'Capacitance'); xlabel(ax_fb, 'Sample Index');
+        %                 end
+        %                 currentX = hFBTrace.XData; currentY = hFBTrace.YData;
+        %                 newXData = [currentX(~isnan(currentX)), pt_count];
+        %                 newYData = [currentY(~isnan(currentY)), y_actual_filtered];
+        %                 if length(newXData) > 20
+        %                     newXData = newXData(end-19:end); newYData = newYData(end-19:end);
+        %                 end
+        %                 set(hFBTrace, 'XData', newXData, 'YData', newYData);
+        %                 if abs(app.k_fit) > 0
+        %                     equiv_step_loss = -cap_loss / app.k_fit;
+        %                 else
+        %                     equiv_step_loss = 0;
+        %                 end
+        %                 legStr = sprintf('C_{act}\nΔC:%.2e\nΔStep:%.3f', cap_loss, equiv_step_loss);
+        %                 legend(ax_fb, legStr, 'Location', 'northoutside', 'FontSize', 9, 'FontWeight', 'bold');
         %             end
         % 
-        %             % Keep latest 20 points
-        %             currentX = hFBTrace.XData;
-        %             currentY = hFBTrace.YData;
-        % 
-        %             % Concatenate new data (filtering out NaNs from initialization)
-        %             newXData = [currentX(~isnan(currentX)), pt_count];
-        %             newYData = [currentY(~isnan(currentY)), y_actual_filtered];
-        % 
-        %             % Slice the array to keep only the last 20 elements
-        %             if length(newXData) > 20
-        %                 newXData = newXData(end-19:end);
-        %                 newYData = newYData(end-19:end);
-        %             end
-        % 
-        %             % Update the graphics object directly for high performance
-        %             set(hFBTrace, 'XData', newXData, 'YData', newYData);
-        % 
-        %             % Calculate equivalent positioning error (Step Loss)
-        %             % Step Loss = Capacitance Loss / Sensitivity (k_fit)
-        %             if abs(app.k_fit) > 0
-        %                 equiv_step_loss = -cap_loss / app.k_fit;
-        %             else
-        %                 equiv_step_loss = 0; % Prevent division by zero
-        %             end
-        % 
-        %             % Construct legend string with both Cap and Step error metrics
-        %             % Using Consolas or Monospace font in UI is recommended for stable digits
-        %             legStr = sprintf('C_{act}\nΔC:%.2e\nΔStep:%.3f', cap_loss, equiv_step_loss);
-        %             legend(ax_fb, legStr, 'Location', 'northoutside', 'FontSize', 9, 'FontWeight', 'bold');
-        %         end
-        % 
-        %         % --- app.AxesCapFitting ---
-        %         if strcmp(app.LogPlotSwitch.Value, "On")
-        %             trace_idx = max(1, pt_count-14):pt_count;
-        %             set(hTrace, 'XData', app.capFitData(trace_idx, 1), 'YData', app.capFitData(trace_idx, 2));
-        %             set(hPoint, 'XData', current_x, 'YData', y_actual_filtered);
-        % 
-        %             % Adaptive Zooming
-        %             max_dist_x = max(max_dist_x, abs(current_x - demanded_x));
-        %             max_dist_y = max(max_dist_y, abs(y_actual_filtered - y_theoretical));
-        %             xlim(ax, [demanded_x - 1.5*max_dist_x - 1e-5, demanded_x + 1.5*max_dist_x + 1e-5]);
-        %             ylim(ax, [y_theoretical - 1.5*max_dist_y - 1e-11, y_theoretical + 1.5*max_dist_y + 1e-11]);
-        % 
-        %             if ~strcmp(status_str, last_status)
-        %                 title(ax, sprintf('Status: %s', status_str));
-        %                 last_status = status_str;
-        %             end
-        %             drawnow limitrate; 
-        % 
-        %             % --- G. Fixed-Width Formatted Logging (Full PID Breakdown) ---
-        %             % Calculate the equivalent step loss (physical error based on capacitance)
-        %             % Equivalent Step Loss = Capacitance Loss / Sensitivity (k_fit)
+        %             % --- F. Fixed-Width Formatted Logging ---
         %             step_loss_from_cap = cap_loss / app.k_fit;
-        % 
         %             fmt = ['Cap(theor-act): [%11.3e - %11.3e = %11.3e] | ', ...
         %                    'Step Loss (=Cap/k_fit): [%7.3f] | ', ...
         %                    'Gains(P,I,D): [%.2e, %.2e, %.2e] | ', ...
-        %                    'PID_Out(P+I+D): [%7.4f + %7.4f + %7.4f = %+10.4f] @ %s [%-9s] @ Step [%.4e]\n'];
+        %                    'PID_Out(P+I+D): [%7.4f + %7.4f + %7.4f = %+10.4f] @ %s [%-15s] @ Step [%.4e/%.4e]\n'];
+        %             % Update logging arguments based on status
+        %             if strcmp(status_str, 'FORCE STEP') || strcmp(status_str, 'PID PAUSED')
+        %                 log_args = {y_theoretical, y_actual_filtered, cap_loss, ...
+        %                             step_loss_from_cap, Kp, Ki, Kd, ...
+        %                             0, 0, 0, 0, ... % Outputs are effectively zero or forced
+        %                             datetime('now','Format','HH:mm:ss'), status_str, current_x, demanded_x};
+        %             else
+        %                 log_args = {y_theoretical, y_actual_filtered, cap_loss, ...
+        %                             step_loss_from_cap, Kp, Ki, Kd, ...
+        %                             P_out, I_out, D_out, dynamic_step, ...
+        %                             datetime('now','Format','HH:mm:ss'), status_str, current_x, demanded_x};
+        %             end
         % 
-        % 
-        %             fprintf(fmt, ...
-        %                     y_theoretical, ...     % Theoretical Cap
-        %                     y_actual_filtered, ... % Actual Cap
-        %                     cap_loss, ...          % Cap Loss
-        %                     step_loss_from_cap, ...% Step Loss (Calculated from Cap error)
-        %                     Kp, Ki, Kd, ...        % CURRENT PID PARAMETERS (Gains)
-        %                     P_out, ...             % Proportional term
-        %                     I_out, ...             % Integral term
-        %                     D_out, ...             % Derivative term
-        %                     dynamic_step, ...      % Final clamped output
-        %                     datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss.SSSSSS'), ...
-        %                     status_str, current_x);
-        % 
-        % 
+        %             fprintf(fmt, log_args{:});      % Command Window
+        %             fprintf(fid, fmt, log_args{:}); % Log File
+        %             drawnow limitrate; 
         %         end
+        %         if app.positioningSTOP, break; end
         %     end
         % 
-        %     % Clean up: Trim unused pre-allocated rows and close log file
+        %     % --- 6. Cleanup ---
         %     fclose(fid);
         %     app.capFitData = app.capFitData(1:pt_count, :);
+        %     total_time = toc(total_timer);
+        %     fprintf("\n[DONE] Auto-sweep completed. Total points: %d. Total Time: %.2f seconds\n", pt_count, total_time);
         % end
         % 
-        % 
+
+        function goTo_fb(app, volt, target_pos, microstep2)
+            % GOTO_FB (PID): High-precision PID feedback with optimized memory and formatted logging.
+
+            % --- 1. Control & Target Initialization ---
+            navg = max(1, app.FilterWinEditField.Value);
+            step_tolerance = abs(app.StepMinLossEditField.Value);
+            demanded_x = target_pos; % Theoretical target position
+            y_theoretical = app.k_fit * demanded_x + app.b_fit; % Theoretical target capacitance
+
+            % Sampling and system settling interval
+            % wait_time = max(0.01, 1/(speed * microstep2)); 
+            % wait_time = max(app.default_wait_time, 1/speed);
+            wait_time = max(app.default_wait_time, app.PIDwaitsEditField.Value);
+            if wait_time ~= (1/app.SpeedstepsEditField_2.Value)
+                fprintf("[WARING] goTo_fb:\tmodeling sampling time is not equal to feedback sampling time!\n")
+            end
+            fprintf("[LOG] goTo_fb:\twait_time=%.4f s. (>= default %.4f s)\n", wait_time, app.default_wait_time);
+
+            % --- 2. PID Coefficients ---
+            max_safe_step = 10;
+            % Kp = app.KpEditField.Value;      % Proportional Gain
+            % Ki = app.KiEditField.Value;      % Integral Gain
+            % Kd = app.KdEditField.Value;      % Derivative Gain
+
+            % PID State Variables
+            integral_error = 0;
+            last_error_step = 0;
+            dt = wait_time * navg; % Effective loop time step
+
+            % --- 3. Performance Optimization: Memory Pre-allocation ---
+            % Prevents the O(N) overhead of dynamic array resizing
+            max_pts = 50000; 
+            app.capFitData = zeros(max_pts, 2); 
+            pt_count = 0;
+
+            % --- 4. UI/Graphics Setup (Full Recovery with Optimized Handles) ---
+            % Log file
+            fid = fopen(app.LogFileName, 'a');
+            if fid == -1
+                error('[LOG] Could not create log file.');
+            end
+
+            % Prepare Plot
+            if strcmp(app.LogPlotSwitch.Value, "On")
+                ax = app.AxesCapFitting;
+                % A. Cleanup: Clear redundant data points from previous sessions
+                hOldPoints = findobj(ax, 'Type', 'line', 'Color', 'r', 'Marker', 'o');
+                if ~isempty(hOldPoints), delete(hOldPoints); end
+                % B. Handle Management: Seek existing specialized plot handles
+                hTrace = findobj(ax, 'Tag', 'trace_line');
+                hPoint = findobj(ax, 'Tag', 'current_pt');
+                hTheo  = findobj(ax, 'Tag', 'target_pt');
+                % C. Initialization: Create plot objects if they don't exist
+                if isempty(hTrace)
+                    hold(ax, 'on');
+                    % Target crosshair (Horizontal & Vertical references)
+                    yline(ax, y_theoretical, '--', 'Color', [0.7 0.7 0.7], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+                    xline(ax, demanded_x, '--', 'Color', [0.7 0.7 0.7], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+                    % Target point (The static goal)
+                    hTheo = plot(ax, demanded_x, y_theoretical, 'o', 'Color', 'r', 'MarkerFaceColor', 'b', 'MarkerSize', 8, ...
+                        'DisplayName', 'Target Point', 'Tag', 'target_pt');
+                    % Trace line (Recent historical path)
+                    hTrace = plot(ax, NaN, NaN, 'o-', 'Color', [0 0 0.5], 'MarkerSize', 4, 'DisplayName', 'Trace Path', 'Tag', 'trace_line');
+                    % Current position (Real-time marker)
+                    hPoint = plot(ax, NaN, NaN, '+r', 'LineWidth', 2, 'MarkerSize', 12, 'DisplayName', 'Current Pos', 'Tag', 'current_pt');
+                    hold(ax, 'off');
+
+                    % Restore the legend for user clarity
+                    legend(ax, [hTheo, hTrace, hPoint], 'Location', 'northwest', 'FontSize', 7);
+                else
+                    % If handles exist but target has changed, update Target Point and X/Y lines
+                    set(hTheo, 'XData', demanded_x, 'YData', y_theoretical);
+                    % (Note: To update yline/xline dynamically you'd need their handles, 
+                    % but usually 'cla' or deleting old ones at start is simpler).
+                end
+                max_dist_x = 0; max_dist_y = 0;
+            end
+
+            last_status = "";
+
+            % --- 5. Main PID Feedback Loop ---
+            while (~app.positioningSTOP)
+                % --- A. Data Acquisition ---
+                Kp = app.KpEditField.Value;      % Proportional Gain
+                Ki = app.KiEditField.Value;      % Integral Gain
+                Kd = app.KdEditField.Value;      % Derivative Gain
+
+                app.tim.stop(); % Pause background timer to avoid VISA conflicts
+                temp_data = zeros(1, navg);
+                for n = 1:navg
+                    pause(wait_time); 
+                    app.readLockin();
+                    temp_data(n) = app.capData(end);
+                end
+                if strcmp(app.StartStopCapButton.Text{1}, "Stop")
+                    if strcmp(app.tim.Running, 'off'), app.tim.start(); end
+                else
+                    % fprintf('Timer is already active, skipping start.\n');
+                end
+
+
+                % --- B. Error Calculation (Capacitance Domain) ---
+                y_actual_filtered = mean(temp_data);
+                current_x = app.CurrentStepEditField.Value;
+                cap_loss = y_theoretical - y_actual_filtered; 
+                error_step = cap_loss / app.k_fit;
+
+                % --- C. PID Control (Step Domain) ---    
+                if microstep2 > 256 % <CASE A> PID Continuous Feedback Control (High-Resolution)
+                    % Proportional term
+                    P_out = Kp * error_step;
+
+                    % Integral term (with Anti-windup deadzone)
+                    % Even if this if-condition isn't met, integral_error already equals 0
+                    if abs(error_step) > step_tolerance
+                        integral_error = integral_error + (error_step * dt);
+                    end
+                    I_out = Ki * integral_error;
+
+                    % Derivative term
+                    derivative_error = (error_step - last_error_step) / dt;
+                    D_out = Kd * derivative_error;
+
+                    % Combined PID Output
+                    dynamic_step = P_out + I_out + D_out;
+                    last_error_step = error_step;
+
+                    % Safety Clamping 
+                    if abs(dynamic_step) > max_safe_step
+                        dynamic_step = sign(dynamic_step) * max_safe_step;
+                    end
+
+                    new_x = current_x + dynamic_step;
+                    status_str = 'PID ADJ';
+
+                else % <CASE B> Fixed Step Logic (Standard Resolution)
+                    % We reset PID components to zero for clean logging in this mode
+                    P_out = 0; I_out = 0; D_out = 0; dynamic_step = 0;
+
+                    if abs(error_step) <= step_tolerance
+                        status_str = 'STABLE';
+                        new_x = current_x; 
+                    else
+                        status_str = 'ADJUSTING';
+                        % Direction is the sign of the step error
+                        direction = sign(error_step);
+                        new_x = current_x + direction * (1 / microstep2);
+                    end
+                end
+
+                % --- Execute Hardware Move ---
+                if ~strcmp(status_str, 'STABLE')
+                    app.setVoltages(volt, new_x * 120);
+                    app.CurrentStepEditField.Value = new_x;
+                    current_x = new_x;
+                end
+
+                % --- E. Fast Data Recording ---
+                pt_count = pt_count + 1;
+                if pt_count <= max_pts
+                    app.capFitData(pt_count, :) = [current_x, y_actual_filtered];
+                else
+                    app.capFitData(end+1, :) = [current_x, y_actual_filtered];
+                end
+
+                % --- F. High-Efficiency Visualization ---
+                % --- app.AxesCapReadout ---
+                if isprop(app, 'plotCapFBloss') && app.plotCapFBloss
+                    ax_fb = app.AxesCapReadout; % Target axes for real-time tracking
+
+                    % Find the handle using Tag to avoid redundant plot objects
+                    hFBTrace = findobj(ax_fb, 'Tag', 'fb_loss_trace');
+
+                    % If handle is missing (first run or cleared), initialize the plot
+                    if isempty(hFBTrace) || ~isgraphics(hFBTrace)
+                        cla(ax_fb);
+                        hold(ax_fb, 'on');
+
+                        % Draw horizontal dashed line as the setpoint reference
+                        yline(ax_fb, y_theoretical, '--r', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+
+                        % Initialize the dynamic trace line with specific markers
+                        hFBTrace = plot(ax_fb, NaN, NaN, '-o', 'Color', [0 0.5 0], ...
+                            'LineWidth', 1.2, 'MarkerSize', 5, ...
+                            'MarkerFaceColor', [0 0.8 0], 'Tag', 'fb_loss_trace');
+
+                        hold(ax_fb, 'off');
+                        grid(ax_fb, 'on');
+                        % Ensure labels are set for clarity
+                        ylabel(ax_fb, 'Capacitance');
+                        xlabel(ax_fb, 'Sample Index');
+                    end
+
+                    % Keep latest 20 points
+                    currentX = hFBTrace.XData;
+                    currentY = hFBTrace.YData;
+
+                    % Concatenate new data (filtering out NaNs from initialization)
+                    newXData = [currentX(~isnan(currentX)), pt_count];
+                    newYData = [currentY(~isnan(currentY)), y_actual_filtered];
+
+                    % Slice the array to keep only the last 20 elements
+                    if length(newXData) > 20
+                        newXData = newXData(end-19:end);
+                        newYData = newYData(end-19:end);
+                    end
+
+                    % Update the graphics object directly for high performance
+                    set(hFBTrace, 'XData', newXData, 'YData', newYData);
+
+                    % Calculate equivalent positioning error (Step Loss)
+                    % Step Loss = Capacitance Loss / Sensitivity (k_fit)
+                    if abs(app.k_fit) > 0
+                        equiv_step_loss = -cap_loss / app.k_fit;
+                    else
+                        equiv_step_loss = 0; % Prevent division by zero
+                    end
+
+                    % Construct legend string with both Cap and Step error metrics
+                    % Using Consolas or Monospace font in UI is recommended for stable digits
+                    legStr = sprintf('C_{act}\nΔC:%.2e\nΔStep:%.3f', cap_loss, equiv_step_loss);
+                    legend(ax_fb, legStr, 'Location', 'northoutside', 'FontSize', 9, 'FontWeight', 'bold');
+                end
+
+                % --- app.AxesCapFitting ---
+                if strcmp(app.LogPlotSwitch.Value, "On")
+                    trace_idx = max(1, pt_count-14):pt_count;
+                    set(hTrace, 'XData', app.capFitData(trace_idx, 1), 'YData', app.capFitData(trace_idx, 2));
+                    set(hPoint, 'XData', current_x, 'YData', y_actual_filtered);
+
+                    % Adaptive Zooming
+                    max_dist_x = max(max_dist_x, abs(current_x - demanded_x));
+                    max_dist_y = max(max_dist_y, abs(y_actual_filtered - y_theoretical));
+                    xlim(ax, [demanded_x - 1.5*max_dist_x - 1e-5, demanded_x + 1.5*max_dist_x + 1e-5]);
+                    ylim(ax, [y_theoretical - 1.5*max_dist_y - 1e-11, y_theoretical + 1.5*max_dist_y + 1e-11]);
+
+                    if ~strcmp(status_str, last_status)
+                        title(ax, sprintf('Status: %s', status_str));
+                        last_status = status_str;
+                    end
+                    drawnow limitrate; 
+
+                    % --- G. Fixed-Width Formatted Logging (Full PID Breakdown) ---
+                    % Calculate the equivalent step loss (physical error based on capacitance)
+                    % Equivalent Step Loss = Capacitance Loss / Sensitivity (k_fit)
+                    step_loss_from_cap = cap_loss / app.k_fit;
+
+                    fmt = ['Cap(theor-act): [%11.3e - %11.3e = %11.3e] | ', ...
+                           'Step Loss (=Cap/k_fit): [%7.3f] | ', ...
+                           'Gains(P,I,D): [%.2e, %.2e, %.2e] | ', ...
+                           'PID_Out(P+I+D): [%7.4f + %7.4f + %7.4f = %+10.4f] @ %s [%-9s] @ Step [%.4e/%.4e]\n'];
+
+
+                    fprintf(fmt, ...
+                            y_theoretical, ...     % Theoretical Cap
+                            y_actual_filtered, ... % Actual Cap
+                            cap_loss, ...          % Cap Loss
+                            step_loss_from_cap, ...% Step Loss (Calculated from Cap error)
+                            Kp, Ki, Kd, ...        % CURRENT PID PARAMETERS (Gains)
+                            P_out, ...             % Proportional term
+                            I_out, ...             % Integral term
+                            D_out, ...             % Derivative term
+                            dynamic_step, ...      % Final clamped output
+                            datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss.SSSSSS'), ...
+                            status_str, current_x, demanded_x);
+
+
+                end
+            end
+
+            % Clean up: Trim unused pre-allocated rows and close log file
+            fclose(fid);
+            app.capFitData = app.capFitData(1:pt_count, :);
+        end
+
+
         
         % Button pushed function (LogCapDataButton) calls
         function logCapData(app)
@@ -1539,13 +1551,13 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
                         fprintf(fid, '[%s] Pt %06d: %+.5e deg\n', t_str, lastSavedIdx + i, newData(i));
                     else
                         % Format for Voltage data (converted to uV)
-                        capVolt = newData(i) * 1e6;
+                        capVolt = newData(i);
                         if ~(isempty(app.k_fit) || app.k_fit == 0)
                             step_theoretical = (capVolt - app.b_fit) / app.k_fit;
                         else
                             step_theoretical = 0;
                         end
-                        fprintf(fid, '[%s] Pt %06d: %+.5e uV [step=%7.3f]\n', t_str, lastSavedIdx + i, capVolt, step_theoretical);
+                        fprintf(fid, '[%s] Pt %06d: %+.5e V [step=%7.3f]\n', t_str, lastSavedIdx + i, capVolt, step_theoretical);
                     end
                 end
                 
@@ -1573,8 +1585,11 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         
             % wait_time_for_loop = 1/(speed * microstep);
             wait_time_for_loop = 1/speed;
-            wait_time = app.default_wait_time;
-            fprintf("[LOG] goTo_fb_scan:\tscan loop wait_time=%.4f s\n", wait_time);
+            wait_time = max(app.default_wait_time, app.PIDwaitsEditField.Value);
+            if wait_time ~= (1/app.SpeedstepsEditField_2.Value)
+                fprintf("[WARING] goTo_fb_scan:\tmodeling sampling time is not equal to feedback sampling time!\n")
+            end
+            fprintf("[LOG] goTo_fb_scan:\tscan loop wait_time=%.4f s. (>= default %.4f s)\n", wait_time, app.default_wait_time);
             
         
             % parameters for PID feedback loop
@@ -1601,9 +1616,12 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         
                 cnt = 0;
                 
-                fprintf("[LOG] Starting feedback loop with total_cnt=%d for step %d/%d.\n", total_cnt, i, total_steps);
+                fprintf("[LOG] Starting feedback loop with total_cnt=%d for step %d/%d (scan_loop_step=%.3e).\n", total_cnt, i, total_steps, scan_loop_step);
                 while cnt < total_cnt
-                    
+                    if strcmp(app.CloseLoopSwitch.Value, "Off")
+                        fprintf("[LOG] Feedback loop terminated.\n\n");
+                        break
+                    end
                     y_theoretical = app.k_fit * scan_loop_step + app.b_fit; % Theoretical target capacitance
                     Kp = app.KpEditField.Value;
                     Ki = app.KiEditField.Value;
@@ -1654,12 +1672,12 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
                     fmt = ['Cap(theor-act): [%11.3e - %11.3e = %11.3e] | ', ...
                            'Step Loss (=Cap/k_fit): [%7.3f] | ', ...
                            'Gains(P,I,D): [%.2e, %.2e, %.2e] | ', ...
-                           'PID_Out(P+I+D): [%7.4f + %7.4f + %7.4f = %+10.4f] @ %s @ Step [%.4e]\n'];
+                           'PID_Out(P+I+D): [%7.4f + %7.4f + %7.4f = %+10.4f] @ %s @ Step [%.4e/%.4e]\n'];
 
                     log_args = {y_theoretical, y_actual_filtered, cap_loss, ...
                                 step_loss_from_cap, Kp, Ki, Kd, ...
                                 P_out, I_out, D_out, dynamic_step, ...
-                                datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss.SSSSSS'), fb_loop_step};
+                                datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss.SSSSSS'), fb_loop_step, scan_loop_step};
 
                     fprintf(fmt, log_args{:});      % Command Window
                     fprintf(fid, fmt, log_args{:}); % Log file
@@ -1711,6 +1729,8 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         function zeroingCap(app, volt, microstep, speed)
             % zeroingCap: Performs a scan to find the inflection point of capacitance
             % and moves the apparatus to that position.
+            app.StartStopCapButton.Enable = false; % prevent data racing
+
             searchStep_srt = 10; 
             searchStep_end = -searchStep_srt;
             app.StepsCapZero = -inf;
@@ -1724,7 +1744,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             total_steps = round(abs(searchStep_end - start_step) * (microstep));
             if total_steps == 0, return; end
             step_inc = (1 / microstep) * sign(searchStep_end - start_step);
-            scanData = zeros(total_steps, 2);
+            app.scanData = zeros(total_steps, 2);
             wait_time = 1 / (speed * microstep);
 
             % 1. Data Collection Loop
@@ -1737,9 +1757,10 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
                 app.tim.stop(); 
                 app.readLockin();
                 if ~isempty(app.capData)
-                    scanData(i, :) = [curr_step, app.capData(end)];
+                    app.scanData(i, :) = [curr_step, app.capData(end)];
+                    plot(app.AxesCapReadout, app.capData, '-');
                 else
-                    scanData(i, :) = [curr_step, 0]; % Fallback if no data
+                    app.scanData(i, :) = [curr_step, 0]; % Fallback if no data
                 end
                 if strcmp(app.StartStopCapButton.Text{1}, "Stop")
                     if strcmp(app.tim.Running, 'off'), app.tim.start(); end
@@ -1754,8 +1775,8 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
 
             % 2. Data Processing (Post-Scan)
             fprintf('[LOG] Data collection finished, processing data...\n');
-            validIdx = scanData(:,1) ~= 0; 
-            dataToProcess = scanData(validIdx, :);
+            validIdx = app.scanData(:,1) ~= 0; 
+            dataToProcess = app.scanData(validIdx, :);
 
             if isempty(dataToProcess) || size(dataToProcess, 1) < 5
                 warning('Not enough data to find inflection point.');
@@ -1807,6 +1828,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
 
             % Move device to the identified inflection point
             app.goTo(volt, inflectionStep, microstep, speed);
+            app.StartStopCapButton.Enable = true; % prevent data racing
         end
         
         % % Timer Update: stable version (tool function for app.zeroingCap())
@@ -2494,6 +2516,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
 
             app.setPositioningEnable(true);
             app.LogCapDataButton.Enable = true;
+            app.CloseLoopSwitch.Value = "Off";
             app.CloseLoopSwitch.Enable = true;
             app.ZeroCapButton.Enable = true;
             app.ReadChannelDropDown.Editable = "on";
@@ -2503,11 +2526,16 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         function GOButtonPushed(app, event)
             % "for loop" params
             speed = app.SpeedstepsEditField.Value;
+            if speed <= 0
+                errordlg(sprintf('Speed must larger than 0! [speed=%.3f]', speed));
+                return;
+            end
             microstep = str2double(app.MicroStepDropDown.Value);
             target = round(app.TargetStepEditField.Value*microstep)/microstep; % Round to nearest microstep
             
             % prevent channel switching while moving MEMS
             app.ReadChannelDropDown.Editable = "off";
+            app.ZeroCapButton.Enable = false; % prevent data racing
             % swith mode
             if strcmp(app.CloseLoopSwitch.Value, "On")
                 % check if model is calibrated
@@ -2523,6 +2551,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
                 app.goTo(app.DriveVoltageEditField_2.Value, target, microstep, speed);
             end
             app.ReadChannelDropDown.Editable = "on";
+            app.ZeroCapButton.Enable = true; % prevent data racing
         end
 
         % Button pushed function: RecordMovieButton
@@ -2705,7 +2734,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.FinalStepEditField.Value = 0;
             app.FilterWinEditField.Value = 1;
             % app.StepMinLossEditField.Value = 0.05; % close "I" when StepLoss < 5%
-            app.SpeedstepsEditField_2.Value = 0.2;
+            % app.SpeedstepsEditField_2.Value = 0.2;
             
             % 2. Reset Data Properties
             % Clear the array so old points don't appear in the next 'goTo' call
@@ -2746,10 +2775,10 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             % Retrieve parameters from UI components
             drive_volt = app.DriveVoltageEditField_3.Value;
             final_pos  = app.FinalStepEditField.Value;
-            if app.FinalMicrostepDropDown.Value == "inf"
+            if app.PIDMicrostepDropDown.Value == "inf"
                 microstep2 = 512;
             else
-                microstep2 = str2double(app.FinalMicrostepDropDown.Value);
+                microstep2 = str2double(app.PIDMicrostepDropDown.Value);
             end
             if isempty(app.StepMinLossEditField.Value)
                 app.StepMinLossEditField.Value = 0.0001; % Default step_tolerance
@@ -2759,6 +2788,13 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.LogPlotSwitch.Enable = false;
             app.GOButton_2.Enable = false;
             app.CANCELButton.Enable = true;
+
+            % Move from the end of the scan range to the user-defined final position
+            if app.CurrentStepEditField.Value ~= final_pos
+                microstep1 = str2double(app.ScanMicrostepDropDown.Value);
+                speed_move = 1; % faster
+                app.goTo_fit(drive_volt, app.CurrentStepEditField.Value, final_pos, microstep1, speed_move, false);
+            end
 
             if app.positioningSTOP
                 app.positioningSTOP = false;
@@ -2863,6 +2899,13 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         % Button pushed function: PlotCapLossButton
         function PlotCapLossButtonPushed(app, event)
             app.plotCapFBloss = ~(app.plotCapFBloss);
+            if app.plotCapFBloss
+                app.PlotCapLossButton.BackgroundColor = [0, 0.5, 0];
+                app.PlotCapLossButton.FontColor = [1, 1, 1];
+            else
+                app.PlotCapLossButton.BackgroundColor = [1, 1, 1];
+                app.PlotCapLossButton.FontColor = [0, 0, 0];
+            end
         end
 
         % Button pushed function: LogCapDataButton
@@ -2870,28 +2913,15 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.logCapData();
         end
 
-        % Value changed function: CloseLoopSwitch
-        function CloseLoopSwitchValueChanged(app, event)
-            % if strcmp(app.CloseLoopSwitch.Value, "On")
-            %     % params
-            %     volt = app.DriveVoltageEditField_2.Value;
-            %     speed_fb = app.SpeedstepsEditField.Value;
-            %     % microstep_fb = 1024; % > 512, means feedback continuously
-            %     % curr_step = app.StepsPhyEditField.Value;
-            %     pause(0.2);
-            %     fprintf("[LOG] CloseLoopSwitchValueChanged [value='On']\n" + ...
-            %         "\tfunction 'goTo_fb_scan' enable. 'demanded_x' changing while PID is active. PID parameters are the same as goTo_fb.\n")
-            %     app.goTo_fb_scan(volt, speed_fb);
-            % else
-            %     fprintf("[LOG] CloseLoopSwitchValueChanged [value='Off']\n")
-            % end
-        end
-
         % Button pushed function: ZeroCapButton
         function ZeroCapButtonPushed(app, event)
             % "for loop" params
             volt = app.DriveVoltageEditField_2.Value;
             speed = app.SpeedstepsEditField.Value;
+            if speed <= 0
+                errordlg(sprintf('Speed must larger than 0! [speed=%.3f]', speed));
+                return;
+            end
             microstep = str2double(app.MicroStepDropDown.Value);
             % disable GOButton
             app.GOButton.Enable = false;
@@ -3531,7 +3561,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             % Create SpeedstepsEditField
             app.SpeedstepsEditField = uieditfield(app.PositioningTab, 'numeric');
             app.SpeedstepsEditField.Position = [162 43 41 24];
-            app.SpeedstepsEditField.Value = 2;
+            app.SpeedstepsEditField.Value = 1;
 
             % Create SpeedstepsEditFieldLabel
             app.SpeedstepsEditFieldLabel = uilabel(app.PositioningTab);
@@ -3586,7 +3616,6 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
 
             % Create CloseLoopSwitch
             app.CloseLoopSwitch = uiswitch(app.PositioningTab, 'slider');
-            app.CloseLoopSwitch.ValueChangedFcn = createCallbackFcn(app, @CloseLoopSwitchValueChanged, true);
             app.CloseLoopSwitch.Enable = 'off';
             app.CloseLoopSwitch.Position = [386 12 18 8];
 
@@ -3633,8 +3662,8 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.InitResetButton_2.ButtonPushedFcn = createCallbackFcn(app, @InitResetButton_2Pushed, true);
             app.InitResetButton_2.BackgroundColor = [0 0 0];
             app.InitResetButton_2.FontColor = [1 1 1];
-            app.InitResetButton_2.Position = [10 9 50 66];
-            app.InitResetButton_2.Text = {'Init/'; 'Reset'};
+            app.InitResetButton_2.Position = [6 8 88 33];
+            app.InitResetButton_2.Text = 'Init/Reset';
 
             % Create ScanStepSrt
             app.ScanStepSrt = uieditfield(app.PositioningFeedbackTab, 'numeric');
@@ -3650,13 +3679,13 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             % Create SpeedstepsEditField_2
             app.SpeedstepsEditField_2 = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.SpeedstepsEditField_2.HorizontalAlignment = 'center';
-            app.SpeedstepsEditField_2.Position = [125 47 26 23];
-            app.SpeedstepsEditField_2.Value = 0.2;
+            app.SpeedstepsEditField_2.Position = [52 49 26 23];
+            app.SpeedstepsEditField_2.Value = 2;
 
             % Create SpeedstepsEditField_2Label
             app.SpeedstepsEditField_2Label = uilabel(app.PositioningFeedbackTab);
             app.SpeedstepsEditField_2Label.HorizontalAlignment = 'center';
-            app.SpeedstepsEditField_2Label.Position = [75 39 46 40];
+            app.SpeedstepsEditField_2Label.Position = [2 41 46 40];
             app.SpeedstepsEditField_2Label.Text = {'Speed'; '(step/s)'};
 
             % Create CurrentStepLabel
@@ -3681,7 +3710,7 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.GOButton_2.BackgroundColor = [0 0 1];
             app.GOButton_2.FontColor = [1 1 1];
             app.GOButton_2.Enable = 'off';
-            app.GOButton_2.Position = [514 11 55 36];
+            app.GOButton_2.Position = [515 6 55 36];
             app.GOButton_2.Text = 'GO';
 
             % Create FinalStepEditField
@@ -3710,14 +3739,14 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             % Create FinalMicrostepLabel
             app.FinalMicrostepLabel = uilabel(app.PositioningFeedbackTab);
             app.FinalMicrostepLabel.HorizontalAlignment = 'center';
-            app.FinalMicrostepLabel.Position = [226 6 57 30];
-            app.FinalMicrostepLabel.Text = {'Final'; 'Microstep'};
+            app.FinalMicrostepLabel.Position = [224 7 57 30];
+            app.FinalMicrostepLabel.Text = {'PID'; 'Microstep'};
 
-            % Create FinalMicrostepDropDown
-            app.FinalMicrostepDropDown = uidropdown(app.PositioningFeedbackTab);
-            app.FinalMicrostepDropDown.Items = {'2', '4', '8', '16', '32', '64', '128', '256', 'inf'};
-            app.FinalMicrostepDropDown.Position = [282 10 68 24];
-            app.FinalMicrostepDropDown.Value = 'inf';
+            % Create PIDMicrostepDropDown
+            app.PIDMicrostepDropDown = uidropdown(app.PositioningFeedbackTab);
+            app.PIDMicrostepDropDown.Items = {'2', '4', '8', '16', '32', '64', '128', '256', 'inf'};
+            app.PIDMicrostepDropDown.Position = [286 10 64 24];
+            app.PIDMicrostepDropDown.Value = 'inf';
 
             % Create CANCELButton
             app.CANCELButton = uibutton(app.PositioningFeedbackTab, 'push');
@@ -3743,13 +3772,13 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             % Create ScanMicrostepLabel
             app.ScanMicrostepLabel = uilabel(app.PositioningFeedbackTab);
             app.ScanMicrostepLabel.HorizontalAlignment = 'center';
-            app.ScanMicrostepLabel.Position = [69 8 55 30];
+            app.ScanMicrostepLabel.Position = [105 7 55 30];
             app.ScanMicrostepLabel.Text = {'Scan'; 'Microstep'};
 
             % Create ScanMicrostepDropDown
             app.ScanMicrostepDropDown = uidropdown(app.PositioningFeedbackTab);
             app.ScanMicrostepDropDown.Items = {'2', '4', '8', '16', '32', '64', '128', '256', 'inf'};
-            app.ScanMicrostepDropDown.Position = [125 9 71 24];
+            app.ScanMicrostepDropDown.Position = [165 9 59 24];
             app.ScanMicrostepDropDown.Value = '2';
 
             % Create ScanStepEnd
@@ -3770,44 +3799,44 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.SCANButton.BackgroundColor = [0 0 1];
             app.SCANButton.FontColor = [1 1 1];
             app.SCANButton.Enable = 'off';
-            app.SCANButton.Position = [443 11 55 36];
+            app.SCANButton.Position = [443 7 55 36];
             app.SCANButton.Text = 'SCAN';
 
             % Create KpEditFieldLabel
             app.KpEditFieldLabel = uilabel(app.PositioningFeedbackTab);
             app.KpEditFieldLabel.HorizontalAlignment = 'center';
-            app.KpEditFieldLabel.Position = [361 76 22 40];
+            app.KpEditFieldLabel.Position = [356 76 22 40];
             app.KpEditFieldLabel.Text = 'Kp';
 
             % Create KpEditField
             app.KpEditField = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.KpEditField.HorizontalAlignment = 'center';
-            app.KpEditField.Position = [383 83 44 23];
-            app.KpEditField.Value = 0.2;
+            app.KpEditField.Position = [378 83 49 23];
+            app.KpEditField.Value = 0.35;
 
             % Create KiEditFieldLabel
             app.KiEditFieldLabel = uilabel(app.PositioningFeedbackTab);
             app.KiEditFieldLabel.HorizontalAlignment = 'center';
-            app.KiEditFieldLabel.Position = [360 39 25 40];
+            app.KiEditFieldLabel.Position = [356 39 25 40];
             app.KiEditFieldLabel.Text = 'Ki';
 
             % Create KiEditField
             app.KiEditField = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.KiEditField.HorizontalAlignment = 'center';
-            app.KiEditField.Position = [383 46 44 23];
-            app.KiEditField.Value = 0.002;
+            app.KiEditField.Position = [378 46 50 23];
+            app.KiEditField.Value = 0.0005;
 
             % Create KdEditFieldLabel
             app.KdEditFieldLabel = uilabel(app.PositioningFeedbackTab);
             app.KdEditFieldLabel.HorizontalAlignment = 'center';
-            app.KdEditFieldLabel.Position = [360 2 25 40];
+            app.KdEditFieldLabel.Position = [356 2 25 40];
             app.KdEditFieldLabel.Text = 'Kd';
 
             % Create KdEditField
             app.KdEditField = uieditfield(app.PositioningFeedbackTab, 'numeric');
             app.KdEditField.HorizontalAlignment = 'center';
-            app.KdEditField.Position = [383 9 44 23];
-            app.KdEditField.Value = 0.005;
+            app.KdEditField.Position = [377 9 50 23];
+            app.KdEditField.Value = 0.05;
 
             % Create LogPlotSwitchLabel
             app.LogPlotSwitchLabel = uilabel(app.PositioningFeedbackTab);
@@ -3819,6 +3848,18 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.LogPlotSwitch = uiswitch(app.PositioningFeedbackTab, 'slider');
             app.LogPlotSwitch.Position = [182 45 16 7];
             app.LogPlotSwitch.Value = 'On';
+
+            % Create PIDwaitsEditField
+            app.PIDwaitsEditField = uieditfield(app.PositioningFeedbackTab, 'numeric');
+            app.PIDwaitsEditField.HorizontalAlignment = 'center';
+            app.PIDwaitsEditField.Position = [125 47 26 23];
+            app.PIDwaitsEditField.Value = 0.5;
+
+            % Create PIDwaitsEditFieldLabel
+            app.PIDwaitsEditFieldLabel = uilabel(app.PositioningFeedbackTab);
+            app.PIDwaitsEditFieldLabel.HorizontalAlignment = 'center';
+            app.PIDwaitsEditFieldLabel.Position = [74 38 52 40];
+            app.PIDwaitsEditFieldLabel.Text = {'PID'; 'wait (s)'};
 
             % Create OUTPUTOFFButton
             app.OUTPUTOFFButton = uibutton(app.GridLayout15, 'push');
