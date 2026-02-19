@@ -1,3 +1,5 @@
+PID params is different!
+
 [LOG] SCAN_PART Channel               : R
 [LOG] SCAN_PART_1 (Forward 15 points) : k1 = 2.911e-05,	b1 = 5.846e-04
 [LOG] SCAN_PART_2 (Backward 15 points): k2 = 2.903e-05,	b2 = 5.853e-04

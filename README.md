@@ -1,75 +1,123 @@
 # MEMStepper_DualLockIn
-MATLAB App for MEMS Stepper Control with Dual Lock‑in Amplifier Readout
 
-📫 alexw25.us@berkeley.edu | alexw25.us@utexas.edu
-> By Alex @ Feb.2026
+**MATLAB Application for MEMS Stepper Control with Dual Lock-in Amplifier Readout**
 
-> UC Berkeley-MIT Cao & Tang Lab, All Copyright Reserved.
+📫 [alexw25.us@berkeley.edu](mailto:alexw25.us@berkeley.edu) | [alexw25.us@utexas.edu](mailto:alexw25.us@utexas.edu)
+
+> Developed by Alex · Feb 2026
+> UC Berkeley–MIT Cao & Tang Lab
+> © 2026 All Rights Reserved
+
+---
+
 ## Overview
-`MEMStepper_DualLockIn` is a MATLAB App Designer application for **precision control and characterization of MEMS stepper actuators**.
-It integrates:
-- Dual Stanford Research lock‑in amplifier communication (SR830, SR844)
-- Capacitive sensing & real‑time fitting
-- Camera imaging & motion tracking (angular / radial displacement)
-- Open‑loop & `closed‑loop` positioning
-- `PID` feedback tuning
-- Data logging & visualization
 
-## 1. Main Features
-- **MEMS Drive Control**
-  - 3‑phase voltage output (V1, V2, V3)
-  - Direct voltage / stepping / microstepping modes
-  - Vz and Vd bias control
-  - Output ON/OFF safety
+`MEMStepper_DualLockIn` ([code](./MEMStepper_DualLockIn.m) | [app](./MEMStepper_DualLockIn.mlapp)) is a MATLAB App Designer–based control and characterization platform for MEMS stepper actuators.
 
-- **Dual Lock‑in Amplifier Interface**
-  - Automatic VISA instrument scanning
-  - `SR830` for actuation control
-  - `SR844` for capacitive readout
-  - Real‑time capacitance / phase plotting
+The system integrates:
 
-- **Capacitive Motion Detection**
-  - `Live readout waveform`
-  - Step‑capacitance `linear fitting`
-  - `Feedback loss tracing`
-  - Data logging to file
+* Dual lock-in amplifier communication
+* Capacitive sensing with real-time linear fitting
+* Camera-based motion tracking
+* Open-loop and closed-loop positioning
+* PID feedback tuning and parameter sweep
+* Automated logging and data visualization
 
-- **Camera & Image Processing**
-  - USB camera preview, snapshot, video recording
-  - Polar coordinate transformation (depolar view)
-  - Angular (θ) and radial (R) motion extraction
-  - FFT‑based displacement analysis
-  - Reference design alignment (experimental)
+The application enables **end-to-end drive, sensing, feedback control, and performance analysis** of MEMS stepper devices within a unified graphical interface.
 
-- **Positioning Modes**
-  - Open‑loop target stepping
-  - `Closed‑loop capacitance feedback`
-  - Scan & auto‑zero routines
-  - `PID` parameter sweep & tuning
+See the [tutorial](tutorial.pdf) for a quick start guide.
 
-- **Data & Logging**
-  - `Capacitance vs. step fitting`
-  - Real‑time plot updates
-  - Detailed motion log (`mems.log`)
-  - Snapshot & video export
+---
 
-## 2. Hardware Requirements
-- software: `MATLAB R2025b`
-- 2× Lock‑in amplifiers:
-  - SR830 (for driving)
-  - SR844 (for sensing)
-- VISA backend (e.g., NI‑VISA)
-- MEMS stepper actuator
+# 1. Main Features
 
-## 3. Core Internal Functions
-- `scanUSBPort`: auto‑detect VISA instruments
-- `readLockin`: read and parse lock‑in output
-- `setVoltages`: 3‑phase drive waveform generation
-- `goTo`, `goTo_fit`, `goTo_fb`: positioning engines
-- PID control with logging & stability check
+| Module                     | Capability                     | Description                                           |
+| -------------------------- | ------------------------------ | ----------------------------------------------------- |
+| **Drive Control**          | 3-Phase Output (V1/V2/V3)      | Generates programmable three-phase drive waveforms    |
+|                            | Stepping / Microstepping Modes | Supports discrete stepping and fine microstep control |
+|                            | Bias Control (Vz / Vd)         | Independent bias voltage tuning                       |
+|                            | Output Protection              | Safe ON/OFF switching logic                           |
+| **Dual Lock-in Interface** | VISA Auto-Detection            | Automatic instrument scanning                         |
+|                            | SR830 (Drive)                  | Sensing signal generation                           |
+|                            | SR844 (Sense)                  | Capacitive amplitude/phase measurement                |
+|                            | Real-Time Plotting             | Continuous waveform visualization                     |
+| **Capacitive Feedback**    | Live Capacitance Readout       | Streaming sensing data                                |
+|                            | Step–Cap Linear Fit            | Extract k/b calibration parameters                    |
+|                            | Loss Tracking                  | Theoretical vs. actual step deviation monitoring      |
+|                            | Auto Logging                   | Automatic log file generation                         |
+| **Vision Module**          | USB Camera Control             | Preview, capture, and recording                       |
+|                            | Polar Transform                | Angular/radial displacement extraction                |
+|                            | FFT Analysis                   | Frequency-domain displacement characterization        |
+|                            | Reference Alignment            | Experimental alignment tool                           |
+| **Positioning Control**    | Open-Loop Mode                 | Direct target stepping                                |
+|                            | Closed-Loop Mode               | Capacitance-based feedback positioning                |
+|                            | Scan & Auto-Zero               | Automated calibration routine                         |
+|                            | PID Sweep & Tuning             | Stability evaluation and parameter optimization       |
+| **Data & Analysis**        | Real-Time Plot Update          | Capacitance-step monitoring                           |
+|                            | Motion Logging                 | Structured `mems.log` file                            |
+|                            | Snapshot/Video Export          | Data archival and documentation                       |
 
-## 4. File Descriptions
-- `MEMStepper_DualLockIn.mlapp` — main app class (must be edited in **MATLAB R2025b**)
-- `MEMStepper_DualLockIn.m` — main app class (can be edited in **MATLAB R2024b**)
-- `mems.log` — runtime feedback log (auto‑created)
-- Saved snapshots / `capacitance data` / `python analysis script`
+---
+
+# 2. Hardware Requirements
+
+| Category    | Requirement                              |
+| ----------- | ---------------------------------------- |
+| Software    | MATLAB R2025b (App Designer recommended) |
+| Instruments | 2× Lock-in                    |
+|             | SR830 (sensing drive control)                    |
+|             | SR844 (capacitive sensing)               |
+| Interface   | VISA backend (e.g., NI-VISA)             |
+| Device      | MEMS Stepper Actuator                    |
+
+---
+
+# 3. Core Internal Functions
+
+| Function       | Description                                          |
+| -------------- | ---------------------------------------------------- |
+| `scanUSBPort`  | Auto-detect VISA instruments                         |
+| `readLockin`   | Parse lock-in amplifier output data                  |
+| `setVoltages`  | Generate three-phase drive voltages                  |
+| `goTo`         | Open-loop positioning                                |
+| `goTo_fit`     | Positioning to calibrate k/b linear model                     |
+| `goTo_fb`      | Closed-loop feedback positioning                     |
+| `goTo_fb_scan` | Closed-loop positioning (scan-based)  |
+| PID Module     | Closed-loop control with logging and stability check |
+
+---
+
+# 4. File Structure
+
+```
+├─analyze
+│  ├─0_fitscanLog  # Scripts for visualizing and analyzing fit process parameters
+│  ├─1_memsLog     # Scripts for reading and analyzing mems.log
+│  └─2_capdataLog  # Scripts for visualizing capdata.log
+├─docs
+│  ├─our_mems      # Article of our MEMS
+│  └─ref_doc       # MEMS PID related reference
+├─files
+│  ├─MEMStepper_DAC_Approach.mlapp  # Original version of the MEMS control app code
+│  ├─MEMS_phy.mp4                   # Video demonstrating MEMS rotation angle characterization
+│  ├─mems_r_2um.png                 # Optical microscopy image of MEMS device (2μm scale)
+│  ├─PID_demo.mp4                   # Demo video for PID operation
+│  ├─ScanPID-1.mp4                  # Scan PID control demo video 1
+│  └─ScanPID-2.mp4                  # Scan PID control demo video 2
+└─latex
+```
+
+---
+
+# 5. File Descriptions
+
+| File                                          | Description                                         |
+| --------------------------------------------- | --------------------------------------------------- |
+| `MEMStepper_DualLockIn.mlapp`                 | Main App Designer class (MATLAB R2025b recommended) |
+| `MEMStepper_DualLockIn.m`                     | Script-compatible class file (editable in R2024b)   |
+| `mems.log`                                    | Runtime motion feedback log (auto-generated)        |
+| Snapshots / Capacitance Data / Python Scripts | Exported experimental data and analysis scripts     |
+
+---
+
+

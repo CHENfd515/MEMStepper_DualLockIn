@@ -10,8 +10,8 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         StartStopCapButton              matlab.ui.control.Button
         CapValue                        matlab.ui.control.Label
         ClearCapButton                  matlab.ui.control.Button
-        AxesCapReadout                  matlab.ui.control.UIAxes
         AxesCapFitting                  matlab.ui.control.UIAxes
+        AxesCapReadout                  matlab.ui.control.UIAxes
         GridLayout6                     matlab.ui.container.GridLayout
         RecordMovieButton               matlab.ui.control.Button
         StartPreviewButton              matlab.ui.control.Button
@@ -131,8 +131,8 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
         ImageMotionDetectionPanel       matlab.ui.container.Panel
         GridLayout2                     matlab.ui.container.GridLayout
         ClearGraphsButton               matlab.ui.control.Button
-        UIAxes6                         matlab.ui.control.UIAxes
         UIAxes2                         matlab.ui.control.UIAxes
+        UIAxes6                         matlab.ui.control.UIAxes
         UIAxes3                         matlab.ui.control.UIAxes
         UIAxes4                         matlab.ui.control.UIAxes
         UIAxes5                         matlab.ui.control.UIAxes
@@ -3280,16 +3280,6 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.UIAxes3.Layout.Row = 1;
             app.UIAxes3.Layout.Column = 3;
 
-            % Create UIAxes2
-            app.UIAxes2 = uiaxes(app.GridLayout2);
-            title(app.UIAxes2, 'De-polar view')
-            app.UIAxes2.XTick = [];
-            app.UIAxes2.YTick = [];
-            app.UIAxes2.BoxStyle = 'full';
-            app.UIAxes2.Box = 'on';
-            app.UIAxes2.Layout.Row = [1 2];
-            app.UIAxes2.Layout.Column = 1;
-
             % Create UIAxes6
             app.UIAxes6 = uiaxes(app.GridLayout2);
             title(app.UIAxes6, 'Radial Detection')
@@ -3299,6 +3289,16 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.UIAxes6.Box = 'on';
             app.UIAxes6.Layout.Row = 2;
             app.UIAxes6.Layout.Column = 3;
+
+            % Create UIAxes2
+            app.UIAxes2 = uiaxes(app.GridLayout2);
+            title(app.UIAxes2, 'De-polar view')
+            app.UIAxes2.XTick = [];
+            app.UIAxes2.YTick = [];
+            app.UIAxes2.BoxStyle = 'full';
+            app.UIAxes2.Box = 'on';
+            app.UIAxes2.Layout.Row = [1 2];
+            app.UIAxes2.Layout.Column = 1;
 
             % Create ClearGraphsButton
             app.ClearGraphsButton = uibutton(app.GridLayout2, 'push');
@@ -4084,16 +4084,6 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.GridLayout17.ColumnWidth = {'1x', '1x', '1x', '1x'};
             app.GridLayout17.RowHeight = {'1x', '1x', '1x', '1x'};
 
-            % Create AxesCapFitting
-            app.AxesCapFitting = uiaxes(app.GridLayout17);
-            title(app.AxesCapFitting, 'Fitting')
-            xlabel(app.AxesCapFitting, 'Steps')
-            ylabel(app.AxesCapFitting, 'Signal')
-            zlabel(app.AxesCapFitting, 'Z')
-            app.AxesCapFitting.Box = 'on';
-            app.AxesCapFitting.Layout.Row = [1 3];
-            app.AxesCapFitting.Layout.Column = [3 4];
-
             % Create AxesCapReadout
             app.AxesCapReadout = uiaxes(app.GridLayout17);
             title(app.AxesCapReadout, {'Capacitance Readout'; ''})
@@ -4103,6 +4093,16 @@ classdef MEMStepper_DualLockIn < matlab.apps.AppBase
             app.AxesCapReadout.Box = 'on';
             app.AxesCapReadout.Layout.Row = [1 3];
             app.AxesCapReadout.Layout.Column = [1 2];
+
+            % Create AxesCapFitting
+            app.AxesCapFitting = uiaxes(app.GridLayout17);
+            title(app.AxesCapFitting, 'Fitting')
+            xlabel(app.AxesCapFitting, 'Steps')
+            ylabel(app.AxesCapFitting, 'Signal')
+            zlabel(app.AxesCapFitting, 'Z')
+            app.AxesCapFitting.Box = 'on';
+            app.AxesCapFitting.Layout.Row = [1 3];
+            app.AxesCapFitting.Layout.Column = [3 4];
 
             % Create ClearCapButton
             app.ClearCapButton = uibutton(app.GridLayout17, 'push');
