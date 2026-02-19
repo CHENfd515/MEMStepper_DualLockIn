@@ -9,10 +9,12 @@
 > © 2026 All Rights Reserved
 
 ---
+![MEMS](./files/mems.png)
 
 ## Overview
 
 `MEMStepper_DualLockIn` ([code](./MEMStepper_DualLockIn.m) | [app](./MEMStepper_DualLockIn.mlapp)) is a MATLAB App Designer–based control and characterization platform for MEMS stepper actuators.
+
 
 The system integrates:
 
